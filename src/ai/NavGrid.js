@@ -18,6 +18,37 @@ const PROBE_HEIGHT = 2.45;     // just under a ground-floor ceiling
 const MAX_GROUND_Y = 2.20;     // anything higher is a roof, balcony or awning
 const MAX_LEG = 8;             // longest straight run between path waypoints
 
+/**
+ * Is this spot inside a building?
+ *
+ * It used to mean a single ray straight up, an agent's height long, which only
+ * caught things you would bump your head on — an archway, an awning. Every real
+ * room has its ceiling well above head height, so rooms were never flagged at
+ * all, and redeploys kept putting people in somebody's front room.
+ *
+ * Two conditions, because either one alone is wrong. A ceiling at room height
+ * is not enough: a market lane under a canopy has one, and it is still the
+ * street. Walls close on every side are not enough either: that is also a
+ * description of an alley. Being indoors is both at once.
+ *
+ * Note the ceiling distance has to stay well short of the map's containment
+ * lid, which is a solid surface across the entire sky at thirty-odd metres —
+ * asking whether anything at all is overhead answers yes everywhere.
+ */
+const ROOM_CEILING = 5.5;      // a roof this close overhead is a ceiling
+const WALL_REACH = 8;          // how far to look sideways for enclosure
+const WALLS_FOR_INDOORS = 5;   // of six directions, how many must be blocked
+const CEILING_PROBE = new THREE.Vector3(0, 1, 0);
+const WALL_PROBES = (() => {
+  const dirs = [];
+  const s = Math.sin(0.62), c = Math.cos(0.62);
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2;
+    dirs.push(new THREE.Vector3(Math.cos(a) * s, c, Math.sin(a) * s));
+  }
+  return dirs;
+})();
+
 export class NavGrid {
   constructor(bvh, bounds) {
     this.bvh = bvh;
@@ -76,11 +107,10 @@ export class NavGrid {
 
         // headroom check: an agent needs a clear column to stand in
         origin.set(x, groundY + 0.12, z);
-        const up = this.bvh.raycast(origin, UP, AGENT_HEIGHT, hit);
-        if (up.hit) {
-          if (hit.t < 1.1) continue;
-          this.indoor[i] = 1;
-        }
+        if (this.bvh.raycast(origin, UP, AGENT_HEIGHT, hit).hit && hit.t < 1.1) continue;
+
+        origin.set(x, groundY + 1.2, z);
+        this.indoor[i] = this._enclosed(origin, hit) ? 1 : 0;
 
         // A downward ray passes straight through a wall it never touches, so
         // rooms full of standing geometry read as open floor. Test the volume
@@ -95,6 +125,16 @@ export class NavGrid {
     this._keepLargestRegion();
     this._computeCover();
     return this;
+  }
+
+  /** A ceiling at room height and walls most of the way round. */
+  _enclosed(origin, hit) {
+    if (!this.bvh.raycast(origin, CEILING_PROBE, ROOM_CEILING, hit).hit) return false;
+    let walls = 0;
+    for (const dir of WALL_PROBES) {
+      if (this.bvh.raycast(origin, dir, WALL_REACH, hit).hit) walls++;
+    }
+    return walls >= WALLS_FOR_INDOORS;
   }
 
   /**
@@ -479,9 +519,17 @@ export class NavGrid {
    * from whoever is still alive on the other side, so a redeploy lands behind
    * the fighting rather than in the middle of it.
    *
+   * `avoid` is for people on the same side: they do not need to be a street
+   * away, but a whole squad drawn independently will occasionally deal itself
+   * two bodies in the same doorway, which looks like a bug even though each
+   * placement was fine on its own.
+   *
    * Returns null if nothing suitable turns up, and the caller falls back.
    */
-  spawnPoint(rng, out, { enemies = [], minEnemyDist = 22, clearance = 1.0, samples = 96 } = {}) {
+  spawnPoint(rng, out, {
+    enemies = [], minEnemyDist = 22, avoid = [], minAvoidDist = 4,
+    clearance = 1.0, samples = 96
+  } = {}) {
     let best = -1, bestScore = -Infinity, bestX = 0, bestZ = 0;
 
     for (let s = 0; s < samples; s++) {
@@ -498,6 +546,13 @@ export class NavGrid {
         if (d < nearest) nearest = d;
       }
       if (nearest < minEnemyDist) continue;
+
+      let crowded = false;
+      for (const a of avoid) {
+        if (!a) continue;
+        if (Math.hypot(x - a.x, z - a.z) < minAvoidDist) { crowded = true; break; }
+      }
+      if (crowded) continue;
 
       // Past the comfort distance, extra separation stops mattering; a little
       // noise keeps repeat deaths from landing on the same paving slab.

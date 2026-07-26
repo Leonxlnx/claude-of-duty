@@ -61,10 +61,17 @@ test.describe('movement', () => {
       window.__harness.releaseAll();
       await new Promise((r) => setTimeout(r, 800));
 
+      // Collect a fixed number of frames rather than however many arrive in a
+      // fixed wall-clock window: under a software rasteriser that was eight,
+      // and the test then failed on its own sample count instead of measuring
+      // anything about the eye.
       const samples = [];
       const prev = g.onFrame;
       g.onFrame = () => samples.push(g.player.eye.y);
-      await new Promise((r) => setTimeout(r, 1500));
+      const deadline = performance.now() + 20000;
+      while (samples.length < 40 && performance.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 25));
+      }
       g.onFrame = prev;
 
       let maxStep = 0;
@@ -74,7 +81,7 @@ test.describe('movement', () => {
       return { maxStep, range: Math.max(...samples) - Math.min(...samples), n: samples.length };
     });
 
-    expect(jitter.n).toBeGreaterThan(20);
+    expect(jitter.n).toBeGreaterThanOrEqual(40);
     expect(jitter.maxStep).toBeLessThan(0.001);
     expect(jitter.range).toBeLessThan(0.005);
   });
@@ -216,19 +223,29 @@ test.describe('slide', () => {
         await wait(0.5);
       }
 
+      // Read the boost where it is applied rather than by polling afterwards.
+      // A slide bleeds off from the moment it starts and the run may already be
+      // closing on a stall, so a sample taken a frame or two later can be below
+      // the sprint it came out of while the mechanic worked perfectly.
+      let entrySpeed = 0, priorSpeed = 0;
+      p.onSlide = () => {
+        priorSpeed = p.speed2D;
+        entrySpeed = Math.hypot(p.controller.velocity.x, p.controller.velocity.z);
+      };
+
       h.key('KeyC', true);
-      let entrySpeed = 0, sliding = false, lowestEye = Infinity;
+      let sliding = false, lowestEye = Infinity;
       for (let i = 0; i < 16; i++) {
         await wait(0.04);
         if (p.sliding) sliding = true;
-        entrySpeed = Math.max(entrySpeed, p.speed2D);
         lowestEye = Math.min(lowestEye, p.eye.y - p.controller.position.y);
       }
+      p.onSlide = null;
 
       h.releaseAll();
       await wait(1.4);
       return {
-        sprintSpeed, entrySpeed, sliding, standingEye, lowestEye, clear,
+        sprintSpeed, entrySpeed, priorSpeed, sliding, standingEye, lowestEye, clear,
         endedCleanly: !p.sliding,
         settledSpeed: p.speed2D
       };
@@ -237,7 +254,7 @@ test.describe('slide', () => {
     // A slide is only worth the key if it buys pace over the sprint it costs.
     expect(run.sliding).toBe(true);
     expect(run.sprintSpeed).toBeGreaterThan(6);
-    expect(run.entrySpeed).toBeGreaterThan(run.sprintSpeed);
+    expect(run.entrySpeed).toBeGreaterThan(run.priorSpeed * 1.15);
     // And it has to put the head down, or it is just running.
     expect(run.standingEye - run.lowestEye).toBeGreaterThan(0.3);
     // It ends on its own rather than becoming a permanent movement mode.
@@ -392,6 +409,14 @@ test.describe('respawn', () => {
 
     const spread = await page.evaluate(() => {
       const g = window.__game;
+      const Vec = g.player.eye.constructor;
+      const up = new Vec(0, 1, 0);
+      // Asked of the collision world, not of the navmesh's own indoor flag.
+      // That flag was once computed by a test that no room could ever fail, so
+      // a check against it passed while redeploys landed in bedrooms.
+      const hasCeiling = (p) =>
+        g.world.bvh.raycast(new Vec(p.x, p.y + 1.2, p.z), up, 5.5).hit;
+
       const picks = [];
       let indoorPicks = 0;
       for (let i = 0; i < 20; i++) {
@@ -402,8 +427,7 @@ test.describe('respawn', () => {
           if (!c.alive || c.team === g.player.team) continue;
           nearest = Math.min(nearest, spot.distanceTo(c.position));
         }
-        const cell = g.nav.index(g.nav.cellX(spot.x), g.nav.cellZ(spot.z));
-        if (g.nav.indoor[cell]) indoorPicks++;
+        if (hasCeiling(spot)) indoorPicks++;
         picks.push({ x: spot.x, z: spot.z, nearest });
       }
       const cells = new Set(picks.map((p) => `${Math.round(p.x / 10)},${Math.round(p.z / 10)}`));
@@ -425,6 +449,42 @@ test.describe('respawn', () => {
     // Materialising inside somebody's front room is disorienting and leaves
     // the AI walking into furniture, so every candidate is open ground.
     expect(spread.indoorPicks).toBe(0);
+  });
+
+  /**
+   * The opening wave used to skip the navmesh entirely and take the map's
+   * hand-placed spawn list, jittered a couple of metres with nothing checking
+   * where that landed — so a match could begin with the player, or half the
+   * opposition, standing in a building.
+   */
+  test('nobody starts the match indoors', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 2000);
+
+    const start = await page.evaluate(() => {
+      const g = window.__game;
+      const Vec = g.player.eye.constructor;
+      const up = new Vec(0, 1, 0);
+      const roofed = (p) => g.world.bvh.raycast(new Vec(p.x, p.y + 1.2, p.z), up, 5.5).hit;
+
+      return {
+        player: roofed(g.player.controller.position),
+        agents: g.director.agents.length,
+        agentsRoofed: g.director.agents.filter((a) => roofed(a.controller.position)).length,
+        // And not stacked on top of each other either.
+        closestPair: g.director.agents.reduce((min, a, i) => {
+          for (const b of g.director.agents.slice(i + 1)) {
+            min = Math.min(min, a.controller.position.distanceTo(b.controller.position));
+          }
+          return min;
+        }, Infinity)
+      };
+    });
+
+    expect(start.player).toBe(false);
+    expect(start.agents).toBeGreaterThan(4);
+    expect(start.agentsRoofed).toBe(0);
+    expect(start.closestPair).toBeGreaterThan(2);
   });
 });
 

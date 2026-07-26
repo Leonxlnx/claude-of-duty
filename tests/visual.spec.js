@@ -43,8 +43,33 @@ async function frameStats(page, region) {
   }, region);
 }
 
+/**
+ * Stand in the middle of the market lane looking down it.
+ *
+ * Framing used to come free from the opening spawn, which was a fixed point on
+ * the map. Redeploys — including the first one — now come off the navmesh, so
+ * where a match begins is deliberately not fixed any more, and a test that
+ * measures the frame has to say which frame it means. Down the lane there is
+ * sunlit ground, a shaded side and sky, which is what these assertions are
+ * about.
+ */
+async function standInTheLane(page) {
+  return page.evaluate(() => {
+    const g = window.__game, h = window.__harness;
+    const lane = g.world.map?.marketLane ?? [-18, 18];
+    const z = (lane[0] + lane[1]) * 0.5;
+    const x = 0.4;
+    const y = g.world.groundAt(x, z) + 0.1;
+    h.teleport(x, y, z);
+    g.playerTarget.sync();
+    h.aimAt(x, y + 1.5, z - 30);
+    return { x, y, z };
+  });
+}
+
 test('the sunlit street exposes into a usable range', async ({ page }) => {
   await boot(page, '?auto=1&dynres=0');
+  await standInTheLane(page);
   await settle(page, 4000);
 
   const all = await frameStats(page);
@@ -70,6 +95,7 @@ test('the sky is blue and brighter than the ground', async ({ page }) => {
 
 test('the sun casts shadows that darken part of the frame', async ({ page }) => {
   await boot(page, '?auto=1&dynres=0');
+  await standInTheLane(page);
   await settle(page, 3000);
 
   const shadowed = await page.evaluate(() => {

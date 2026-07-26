@@ -38,11 +38,11 @@ const LEAN_MARGIN = 0.22;   // keep the eye this far off whatever it leans into
 const LEAN_PROBE_HEIGHTS = [0.12, -0.02, -0.34];
 
 const SPEED = {
-  walk: 7.1,
-  sprint: 11.0,
-  crouch: 3.6,
-  ads: 4.1,
-  air: 2.3
+  walk: 5.7,
+  sprint: 8.8,
+  crouch: 2.9,
+  ads: 3.3,
+  air: 2.0
 };
 
 // Slide: crouch out of a sprint and keep the pace for a moment.

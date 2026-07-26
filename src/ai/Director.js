@@ -105,28 +105,35 @@ export class Director {
   /**
    * Put an agent back into the fight.
    *
-   * The opening wave uses the map's team spawns so a match starts with two
-   * sides facing each other down a street. Everything after that comes off the
-   * navmesh, which keeps reinforcements arriving from somewhere new and out of
-   * the buildings — the fixed spawn list is a handful of points, and jittering
-   * around them puts bodies through walls and drips them back in at the same
-   * two places all match.
+   * Everything comes off the navmesh, including the opening wave. The fixed
+   * spawn list was written for two sides facing each other down a street, and
+   * there is no friendly side any more; what it does now is drop the whole
+   * opposition onto a handful of points, jittered by a couple of metres with no
+   * check on where that lands — which is how bodies ended up inside buildings
+   * and inside each other. Ask for a lot of separation first and settle for
+   * less rather than fall back to a bad spot: only if the navmesh has nothing
+   * at all do the old points get used, and then only where they are walkable.
    */
   respawn(agent, initial = false) {
     const team = agent.character.team;
     const enemies = this._enemiesOf(team);
 
-    let point = null;
-    if (!initial) {
-      point = this.nav.spawnPoint(this.rng, _spawn, { enemies, minEnemyDist: 26 })
-        ?? this.nav.spawnPoint(this.rng, _spawn, { enemies, minEnemyDist: 14 });
+    const avoid = [];
+    for (const a of this.teams[team]) {
+      if (a !== agent && a.character.alive) avoid.push(a.controller.position);
     }
+
+    const point =
+      this.nav.spawnPoint(this.rng, _spawn, { enemies, avoid, minEnemyDist: 26 })
+      ?? this.nav.spawnPoint(this.rng, _spawn, { enemies, avoid, minEnemyDist: 14, samples: 192 })
+      ?? this.nav.spawnPoint(this.rng, _spawn, { avoid, minEnemyDist: 0, clearance: 0.7, samples: 256 });
 
     if (!point) {
       const points = this.spawnPoints[team];
       if (!points || !points.length) return;
-      let best = points[0], bestScore = -Infinity;
+      let best = null, bestScore = -Infinity;
       for (const p of points) {
+        if (!this.nav.isWalkableAt(p.x, p.z)) continue;
         let nearest = Infinity;
         for (const e of enemies) {
           if (!e.alive) continue;
@@ -135,9 +142,8 @@ export class Director {
         const score = (nearest === Infinity ? 400 : Math.min(nearest, 3600)) + this.rng.next() * 60;
         if (score > bestScore) { bestScore = score; best = p; }
       }
+      if (!best) return;
       _spawn.copy(best);
-      _spawn.x += (this.rng.next() - 0.5) * 2.6;
-      _spawn.z += (this.rng.next() - 0.5) * 2.6;
       _spawn.y = this.nav.heightAt(_spawn.x, _spawn.z);
     }
 

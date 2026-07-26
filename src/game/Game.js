@@ -524,14 +524,21 @@ export class Game {
       if (!exposed) return p;
       fallback = (fallback ?? new THREE.Vector3()).copy(p);
     }
-    return fallback;
+    if (fallback) return fallback;
+
+    // Nothing cleared the comfort distance. Being seen on arrival is a bad
+    // start; arriving in a stranger's kitchen is a worse one, so drop the
+    // separation requirement rather than the requirement to be outdoors.
+    return this.nav.spawnPoint(this.rng, _candidate, {
+      minEnemyDist: 0, clearance: 0.7, samples: 256
+    });
   }
 
   _respawnPlayer(initial = false) {
-    // The opening spawn stays on the team line; a match should start facing
-    // down the street, not dropped in at random.
-    const picked = initial ? null : this._pickRespawn();
-    _spawn.copy(picked ?? this.world.spawns.A[0]);
+    // Including the opening one. The map's spawn list predates the navmesh and
+    // is not checked against it, and one of its points is inside a building —
+    // which is where every match was starting.
+    _spawn.copy(this._pickRespawn() ?? this.world.spawns.A[0]);
     _spawn.y = this.world.groundAt(_spawn.x, _spawn.z) + 0.08;
     this.player.spawn(_spawn);
 
