@@ -16,12 +16,25 @@ import { SURFACE_INFO } from '../physics/BVH.js';
 const STANCE = { STAND: 0, CROUCH: 1 };
 const TAU = Math.PI * 2;
 
+// Vertical controller corrections smaller than this are gravity settling onto
+// the ground, not a step, and the eye must not react to them.
+const STEP_DEADZONE = 0.004;
+const STEP_SMOOTH_TAU = 0.055;
+
+// Peeking. The eye slides sideways off the body so the player can clear a
+// corner and shoot without walking their whole hitbox into the open.
+const LEAN_OFFSET = 0.46;   // metres the head travels at full lean
+const LEAN_ROLL = 0.21;     // radians of camera roll at full lean
+const LEAN_DROP = 0.07;     // the head dips as it goes over
+const LEAN_MARGIN = 0.22;   // keep the eye this far off whatever it leans into
+const LEAN_PROBE_HEIGHTS = [0.12, -0.02, -0.34];
+
 const SPEED = {
-  walk: 4.25,
-  sprint: 6.6,
-  crouch: 2.15,
-  ads: 2.5,
-  air: 1.4
+  walk: 6.4,
+  sprint: 9.9,
+  crouch: 3.2,
+  ads: 3.75,
+  air: 2.1
 };
 
 const ACCEL = { ground: 62, air: 11, friction: 11.5 };
@@ -35,7 +48,7 @@ export class Player {
     this.audio = audio;
 
     this.controller = new CharacterController(world.bvh, {
-      radius: 0.33, height: 1.76, crouchHeight: 1.16, stepOffset: 0.44, slopeLimit: 50
+      radius: 0.33, height: 1.76, crouchHeight: 0.95, stepOffset: 0.44, slopeLimit: 50
     });
 
     this.yaw = 0;
@@ -64,16 +77,23 @@ export class Player {
     // --- eye rig
     this.eye = new THREE.Vector3();
     this.eyeHeight = 1.62;
-    this.crouchEyeHeight = 1.06;
+    this.crouchEyeHeight = 0.86;
     this.bobPhase = 0;
     this.bobAmount = new Spring3(26, 1.0);
     this.leanSpring = new Spring(0, 15, 0.85);
     this.pitchKick = new Spring(0, 26, 0.62);
     this.yawKick = new Spring(0, 24, 0.66);
     this.rollKick = new Spring(0, 18, 0.7);
-    this.heightSpring = new Spring(this.eyeHeight, 14, 1.0);
+    this.heightSpring = new Spring(this.eyeHeight, 17, 1.0);
     this.landDip = new Spring(0, 19, 0.72);
     this.breath = 0;
+
+    // Peek. `leanInput` is what the keys ask for, `lean` is what the geometry
+    // allows after the wall probe, `leanBlend` is what the camera actually
+    // shows once it has eased there.
+    this.leanInput = 0;
+    this.lean = 0;
+    this.leanBlend = 0;
 
     // recoil that the camera actually keeps (weapon adds to this)
     this.viewRecoil = new THREE.Vector2();
@@ -105,6 +125,7 @@ export class Player {
     this.stanceBlend = 0;
     this.heightSpring.set(this.eyeHeight);
     this.viewRecoil.set(0, 0);
+    this.lean = this.leanBlend = this.leanInput = 0;
     this.spawnProtect = 1.25;
     this.controller.setHeight(this.controller.standHeight);
   }
@@ -164,12 +185,19 @@ export class Player {
       THREE.MathUtils.lerp(this.controller.standHeight, this.controller.crouchHeight, this.stanceBlend)
     );
 
+    // ---- peek
+    this.leanInput = (input.action('leanRight') ? 1 : 0) - (input.action('leanLeft') ? 1 : 0);
+
     // ---- sprint / ads
     const movingForward = fwd > 0.1 && Math.abs(strafe) < 0.9;
     this.sprinting = input.action('sprint') && movingForward && !this.crouched
       && this.controller.grounded && !this.wantsAds && this.timeSinceFire > 0.16;
     const adsTarget = this.wantsAds && !this.sprinting ? 1 : 0;
     this.adsBlend = damp(this.adsBlend, adsTarget, adsTarget > 0.5 ? 17 : 14, dt);
+
+    // Sprinting is both hands on the weapon and a full stride; there is no
+    // shoulder left to hang a lean off.
+    this.lean = this.sprinting ? 0 : this._allowedLean(this.leanInput);
 
     // ---- desired velocity
     const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw);
@@ -226,13 +254,25 @@ export class Player {
     _disp.copy(vel).multiplyScalar(dt);
     this.controller.move(dt, _disp);
 
-    // Cancel the controller's vertical teleports out of the eye and let the
-    // offset bleed off over a few frames. Without this, walking over kerbs and
-    // road camber shows up as a hard vertical tick every step.
-    this.stepSmooth = THREE.MathUtils.clamp(
-      this.stepSmooth - this.controller.stepCorrection,
-      -this.controller.stepOffset, this.controller.stepOffset
-    );
+    // Cancel real vertical teleports — kerbs, stairs, ledges — out of the eye
+    // and let the offset bleed off over a few frames.
+    //
+    // Only real ones. Standing perfectly still the controller still falls a
+    // fraction of a millimetre per step under gravity and gets snapped back,
+    // and absorbing that ratchets the offset up several times per rendered
+    // frame while it only decays once. The result is a couple of centimetres
+    // of vertical noise on a body that has not moved at all: an earthquake
+    // while stood still. Anything below the deadzone is gravity settling, not
+    // a step, and the eye should ignore it. Decay lives on this clock too, so
+    // one accumulation always pairs with one decay.
+    const correction = this.controller.stepCorrection;
+    if (Math.abs(correction) > STEP_DEADZONE) {
+      this.stepSmooth = THREE.MathUtils.clamp(
+        this.stepSmooth - correction,
+        -this.controller.stepOffset, this.controller.stepOffset
+      );
+    }
+    this.stepSmooth *= Math.exp(-dt / STEP_SMOOTH_TAU);
 
     this.speed2D = Math.hypot(vel.x, vel.z);
 
@@ -248,7 +288,10 @@ export class Player {
     // ---- footsteps by distance travelled, not by timer
     if (grounded && this.speed2D > 0.6) {
       this.footstepDistance += this.speed2D * dt;
-      const stride = this.crouched ? 1.35 : this.sprinting ? 2.05 : 1.75;
+      // Moving faster lengthens the stride as well as quickening the cadence,
+      // so these scale with the speed table rather than sitting at fixed
+      // metres — otherwise a quicker player just machine-guns footstep audio.
+      const stride = this.crouched ? 1.9 : this.sprinting ? 2.75 : 2.35;
       if (this.footstepDistance >= stride) {
         this.footstepDistance -= stride;
         const loud = this.sprinting ? 1 : this.crouched ? 0.35 : 0.68;
@@ -276,6 +319,43 @@ export class Player {
     this.lastSurface = this.controller.groundSurface;
   }
 
+  /**
+   * How far the head may travel sideways before it would be inside a wall,
+   * as a signed fraction of a full lean.
+   *
+   * Peeking is only worth having if it stops at the corner rather than
+   * pushing the camera through it — and since the camera is also the muzzle,
+   * a lean through a wall would be a shot through a wall.
+   */
+  _allowedLean(direction) {
+    if (direction === 0) return 0;
+    const eyeY = THREE.MathUtils.lerp(this.eyeHeight, this.crouchEyeHeight, this.stanceBlend);
+    const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw);
+    _leanDir.set(cos * direction, 0, -sin * direction);
+
+    const reach = LEAN_OFFSET + LEAN_MARGIN;
+    let limit = LEAN_OFFSET;
+    // Three heights: a single ray at eye level will happily lean out over a
+    // waist-high crate, or under a low balcony the shoulder would hit.
+    for (const dy of LEAN_PROBE_HEIGHTS) {
+      _leanFrom.copy(this.controller.position);
+      _leanFrom.y += eyeY + dy;
+      const hit = this.world.bvh.raycast(_leanFrom, _leanDir, reach);
+      if (hit.hit) limit = Math.min(limit, Math.max(0, hit.t - LEAN_MARGIN));
+    }
+    return direction * (limit / LEAN_OFFSET);
+  }
+
+  /**
+   * Ground speed as a fraction of a normal walk. Everything that reacts to how
+   * fast the player is moving — bob, sway, weapon spread — reads this rather
+   * than raw metres per second, so retuning the speed table does not silently
+   * retune half the game with it.
+   */
+  get speedNorm() {
+    return THREE.MathUtils.clamp(this.speed2D / SPEED.walk, 0, 1.6);
+  }
+
   /** Render-rate eye rig: bob, sway, lean, kick, breathing. */
   updateView(dt, alpha, time) {
     const c = this.controller;
@@ -286,7 +366,7 @@ export class Player {
     this.heightSpring.update(dt);
 
     // walk cycle drives a figure-eight, scaled by actual speed
-    const speedNorm = THREE.MathUtils.clamp(this.speed2D / SPEED.walk, 0, 1.6);
+    const speedNorm = this.speedNorm;
     const grounded = c.grounded;
     const bobRate = this.sprinting ? 10.4 : this.crouched ? 6.2 : 8.4;
     if (grounded) {
@@ -321,19 +401,25 @@ export class Player {
     const breathAmp = (0.0016 + (1 - THREE.MathUtils.clamp(this.health / 100, 0, 1)) * 0.0035)
       * (1 - this.adsBlend * 0.6);
 
-    this.stepSmooth *= Math.exp(-dt / 0.055);
+    // Ease into the peek. Snapping out from behind cover would be free
+    // information; the travel time is what makes it a decision.
+    this.leanBlend = damp(this.leanBlend, this.lean, 11, dt);
+
     this.eye.copy(this._renderPosition);
-    this.eye.y += this.heightSpring.value + this.landDip.value * 0.055 + this.stepSmooth;
+    this.eye.y += this.heightSpring.value + this.landDip.value * 0.055 + this.stepSmooth
+      - Math.abs(this.leanBlend) * LEAN_DROP;
 
     const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw);
     const bob = this.bobAmount.value;
-    this.eye.x += (bob.x * cos) ;
-    this.eye.z += (-bob.x * sin);
+    const lateral = bob.x + this.leanBlend * LEAN_OFFSET;
+    this.eye.x += lateral * cos;
+    this.eye.z += -lateral * sin;
     this.eye.y += bob.y;
 
     this.viewPitch = this.pitch + this.pitchKick.value + Math.sin(this.breath * 1.7) * breathAmp;
     this.viewYaw = this.yaw + this.yawKick.value + Math.sin(this.breath * 0.9 + 1.2) * breathAmp * 1.4;
     this.viewRoll = this.leanSpring.value + this.rollKick.value
+      - this.leanBlend * LEAN_ROLL
       + Math.sin(this.bobPhase + 1.1) * 0.012 * bobScale;
   }
 
@@ -374,4 +460,6 @@ export class Player {
 
 const _disp = new THREE.Vector3();
 const _euler = new THREE.Euler();
+const _leanDir = new THREE.Vector3();
+const _leanFrom = new THREE.Vector3();
 export { STANCE, SPEED };

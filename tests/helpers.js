@@ -37,4 +37,16 @@ export const call = (page, fn, ...args) =>
 
 export const snapshot = (page) => page.evaluate(() => window.__harness.snapshot());
 
+/**
+ * Stop the AI from killing the player for the rest of the test.
+ *
+ * Tests that audit ammunition accounting fire long bursts in the open, which
+ * reliably draws return fire. Dying mid-burst refills the magazine and the
+ * reserve from the respawn, so the assertion silently ends up measuring the
+ * respawn instead of the reload. Spawn protection already gates all incoming
+ * damage; this just never lets it run out.
+ */
+export const makeInvulnerable = (page) =>
+  page.evaluate(() => { window.__game.player.spawnProtect = 1e9; });
+
 export const settle = (page, ms) => page.waitForTimeout(ms);

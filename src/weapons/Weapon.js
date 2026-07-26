@@ -231,7 +231,7 @@ export class Weapon {
     // stance and stability scale how much of the pattern reaches the view
     const adsScale = 1 - this.player.adsBlend * 0.30;
     const crouchScale = this.player.crouched ? 0.82 : 1;
-    const moveScale = 1 + THREE.MathUtils.clamp(this.player.speed2D / 6, 0, 1) * 0.28;
+    const moveScale = 1 + Math.min(this.player.speedNorm, 1) * 0.28;
     const kick = adsScale * crouchScale * moveScale;
 
     this.player.addRecoil(vert * kick, horiz * kick, 0.68);
@@ -273,8 +273,7 @@ export class Weapon {
   currentSpread() {
     const p = this.player;
     let s = THREE.MathUtils.lerp(this.spec.spreadBase, this.spec.spreadAds, p.adsBlend);
-    const moveNorm = THREE.MathUtils.clamp(p.speed2D / 4.25, 0, 1.5);
-    s += this.spec.spreadMove * moveNorm * (1 - p.adsBlend * 0.55);
+    s += this.spec.spreadMove * p.speedNorm * (1 - p.adsBlend * 0.55);
     if (!p.controller.grounded) s += this.spec.spreadAir * (1 - p.adsBlend * 0.35);
     if (p.crouched) s *= this.spec.spreadCrouch;
     s += this.spread * (1 - p.adsBlend * 0.35);

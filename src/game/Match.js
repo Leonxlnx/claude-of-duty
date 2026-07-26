@@ -8,7 +8,7 @@ const CALLSIGNS_A = ['HAWK', 'VIPER', 'ATLAS', 'RONIN', 'CIPHER', 'ORACLE', 'BIS
 const CALLSIGNS_B = ['JACKAL', 'SPECTRE', 'KILO', 'ONYX', 'HAVOC', 'WRAITH', 'TALON', 'ZEALOT'];
 
 export class Match {
-  constructor({ scoreLimit = 40, timeLimit = 600, respawnDelay = 4.5 } = {}) {
+  constructor({ scoreLimit = 40, timeLimit = 600, respawnDelay = 3.0 } = {}) {
     this.scoreLimit = scoreLimit;
     this.timeLimit = timeLimit;
     this.respawnDelay = respawnDelay;

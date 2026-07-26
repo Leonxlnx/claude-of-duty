@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { boot, snapshot, settle } from './helpers.js';
+import { boot, snapshot, settle, makeInvulnerable } from './helpers.js';
 
 test.describe('movement', () => {
   test('walking moves the player and collision keeps them grounded', async ({ page }) => {
@@ -18,7 +18,8 @@ test.describe('movement', () => {
     const travelled = Math.hypot(dx, dz);
 
     expect(travelled).toBeGreaterThan(1.5);
-    expect(travelled).toBeLessThan(14);
+    // Loose upper bound: catches a teleport or a fall, not a tuning change.
+    expect(travelled).toBeLessThan(20);
     // Never falls through the map, never climbs a wall.
     expect(after.player.position[1]).toBeGreaterThan(-2);
     expect(after.player.position[1]).toBeLessThan(12);
@@ -46,12 +47,162 @@ test.describe('movement', () => {
     await page.evaluate(() => window.__harness.releaseAll());
     expect(airborne).toBe(false);
   });
+
+  test('a standing player does not shake', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 1500);
+
+    // Standing on flat ground the controller still falls a fraction of a
+    // millimetre per step and gets snapped back. Feeding that into the eye
+    // used to read as a constant tremor, so hold the eye to a tolerance far
+    // below anything a player could notice.
+    const jitter = await page.evaluate(async () => {
+      const g = window.__game;
+      window.__harness.releaseAll();
+      await new Promise((r) => setTimeout(r, 800));
+
+      const samples = [];
+      const prev = g.onFrame;
+      g.onFrame = () => samples.push(g.player.eye.y);
+      await new Promise((r) => setTimeout(r, 1500));
+      g.onFrame = prev;
+
+      let maxStep = 0;
+      for (let i = 1; i < samples.length; i++) {
+        maxStep = Math.max(maxStep, Math.abs(samples[i] - samples[i - 1]));
+      }
+      return { maxStep, range: Math.max(...samples) - Math.min(...samples), n: samples.length };
+    });
+
+    expect(jitter.n).toBeGreaterThan(20);
+    expect(jitter.maxStep).toBeLessThan(0.001);
+    expect(jitter.range).toBeLessThan(0.005);
+  });
+
+  test('peeking moves the eye sideways but not through a wall', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 1200);
+
+    const result = await page.evaluate(async () => {
+      const g = window.__game;
+      const p = g.player;
+      const Vec = p.eye.constructor;
+      const settleFor = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      // Somewhere open, so nothing clips the lean.
+      const open = g.nav.randomPoint(g.rng, new Vec());
+      p.controller.position.copy(open);
+      p.controller.position.y += 0.1;
+      p.yaw = 0;
+      window.__harness.releaseAll();
+      await settleFor(600);
+      const centre = new Vec().copy(p.eye);
+
+      window.__harness.key('KeyE', true);
+      await settleFor(700);
+      const right = new Vec().copy(p.eye);
+      const rightRoll = p.viewRoll;
+      window.__harness.releaseAll();
+      await settleFor(700);
+
+      window.__harness.key('KeyQ', true);
+      await settleFor(700);
+      const left = new Vec().copy(p.eye);
+      const leftRoll = p.viewRoll;
+      window.__harness.releaseAll();
+      await settleFor(700);
+
+      // Now put a wall off the right shoulder and ask again. No settle here:
+      // the controller would immediately slide the capsule off the wall, and
+      // the probe is a pure function of the current stance anyway.
+      const body = new Vec().copy(p.controller.position);
+      const dir = new Vec();
+      const standoff = 0.40;
+      let placed = false;
+      for (let a = 0; a < 96; a++) {
+        const ang = (a / 96) * Math.PI * 2;
+        dir.set(Math.sin(ang), 0, Math.cos(ang));
+        const hit = g.world.bvh.raycast(new Vec(body.x, body.y + p.eyeHeight, body.z), dir, 10);
+        if (!hit.hit || hit.t < 2) continue;
+        p.controller.position.x = body.x + dir.x * (hit.t - standoff);
+        p.controller.position.z = body.z + dir.z * (hit.t - standoff);
+        p.yaw = Math.atan2(-dir.x, -dir.z) + Math.PI / 2;
+        placed = true;
+        break;
+      }
+
+      const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+      return {
+        travelRight: flat(right, centre),
+        travelLeft: flat(left, centre),
+        rightRoll,
+        leftRoll,
+        placed,
+        standoff,
+        clampedIntoWall: placed ? p._allowedLean(1) : null,
+        freeAwayFromWall: placed ? p._allowedLean(-1) : null
+      };
+    });
+
+    // A peek has to actually clear a corner to be worth the key.
+    expect(result.travelRight).toBeGreaterThan(0.3);
+    expect(result.travelLeft).toBeGreaterThan(0.3);
+    // Opposite keys roll the camera opposite ways.
+    expect(result.rightRoll).toBeLessThan(-0.1);
+    expect(result.leftRoll).toBeGreaterThan(0.1);
+
+    // The eye is also the muzzle, so leaning through a wall would be shooting
+    // through one. With the wall 0.40m off the shoulder the head may only
+    // travel until it is one margin short of it, and the open side is free.
+    expect(result.placed).toBe(true);
+    expect(result.clampedIntoWall).toBeGreaterThan(0);
+    expect(result.clampedIntoWall).toBeLessThan(0.6);
+    expect(Math.abs(result.freeAwayFromWall)).toBeGreaterThan(0.9);
+  });
+});
+
+test.describe('respawn', () => {
+  test('redeploys scatter across the map and avoid enemy eyes', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 2500);
+
+    const spread = await page.evaluate(() => {
+      const g = window.__game;
+      const Vec = g.player.eye.constructor;
+      const picks = [];
+      for (let i = 0; i < 20; i++) {
+        const spot = g._pickRespawn();
+        if (!spot) continue;
+        let nearest = Infinity;
+        for (const c of g.director.characters) {
+          if (!c.alive || c.team === g.player.team) continue;
+          nearest = Math.min(nearest, spot.distanceTo(c.position));
+        }
+        picks.push({ x: spot.x, z: spot.z, nearest });
+      }
+      const cells = new Set(picks.map((p) => `${Math.round(p.x / 10)},${Math.round(p.z / 10)}`));
+      return {
+        picked: picks.length,
+        distinctAreas: cells.size,
+        span: Math.max(...picks.map((p) => p.x)) - Math.min(...picks.map((p) => p.x)),
+        closestEnemy: Math.min(...picks.map((p) => p.nearest))
+      };
+    });
+
+    expect(spread.picked).toBeGreaterThan(15);
+    // Coming back in the same doorway every time is the thing being fixed.
+    expect(spread.distinctAreas).toBeGreaterThan(6);
+    expect(spread.span).toBeGreaterThan(25);
+    // And never on top of someone.
+    expect(spread.closestEnemy).toBeGreaterThan(12);
+  });
 });
 
 test.describe('gunplay', () => {
   test('firing consumes ammo, spawns effects and reloads', async ({ page }) => {
     const session = await boot(page, '?auto=1');
     await settle(page, 1500);
+    await makeInvulnerable(page);
 
     await page.evaluate(() => window.__harness.fire(true));
     await settle(page, 700);
@@ -86,6 +237,7 @@ test.describe('gunplay', () => {
   test('a reload does not re-arm itself on the next shot', async ({ page }) => {
     const session = await boot(page, '?auto=1');
     await settle(page, 1500);
+    await makeInvulnerable(page);
 
     await page.evaluate(async () => {
       const h = window.__harness;
@@ -99,18 +251,30 @@ test.describe('gunplay', () => {
     await page.waitForFunction(() => window.__game.weapon.ammo === 30, { timeout: 20_000 });
     await settle(page, 300);
 
+    // Hold the trigger until a burst has landed rather than for a fixed slice
+    // of wall time: under a loaded headless run the simulation falls behind
+    // real time, and counting shots per millisecond then measures the host
+    // rather than the weapon.
     const shots = await page.evaluate(async () => {
       const w = window.__game.weapon;
       const before = w.totalShots;
       window.__harness.fire(true);
-      await new Promise((r) => setTimeout(r, 600));
+
+      const deadline = Date.now() + 10_000;
+      let reArmed = false;
+      while (Date.now() < deadline && w.totalShots - before < 6) {
+        // Six rounds cannot empty a thirty round magazine, so any reload
+        // starting here is the weapon re-arming itself — the actual bug.
+        if (w.reloading) { reArmed = true; break; }
+        await new Promise((r) => setTimeout(r, 25));
+      }
       window.__harness.fire(false);
       await new Promise((r) => setTimeout(r, 200));
-      return { fired: w.totalShots - before, reloading: w.reloading, ammo: w.ammo };
+      return { fired: w.totalShots - before, reArmed, ammo: w.ammo };
     });
 
-    expect(shots.fired).toBeGreaterThan(4);
-    expect(shots.reloading).toBe(false);
+    expect(shots.reArmed).toBe(false);
+    expect(shots.fired).toBeGreaterThanOrEqual(6);
     expect(shots.ammo).toBeLessThan(30);
     session.assertClean();
   });

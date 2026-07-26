@@ -31,6 +31,7 @@ const BIND_ORDER = [
   ['forward', 'Move forward'], ['back', 'Move back'],
   ['left', 'Strafe left'], ['right', 'Strafe right'],
   ['jump', 'Jump'], ['crouch', 'Crouch'], ['sprint', 'Sprint'],
+  ['leanLeft', 'Peek left'], ['leanRight', 'Peek right'],
   ['reload', 'Reload'], ['fireMode', 'Fire mode'], ['inspect', 'Inspect weapon'],
   ['scoreboard', 'Scoreboard'], ['pause', 'Pause']
 ];
@@ -420,7 +421,8 @@ const TEMPLATE = /* html */`
 </div>
 <div class="menu-footer">
   <div><kbd>WASD</kbd> move &nbsp; <kbd>SHIFT</kbd> sprint &nbsp; <kbd>CTRL</kbd> crouch &nbsp; <kbd>SPACE</kbd> jump</div>
-  <div><kbd>LMB</kbd> fire &nbsp; <kbd>RMB</kbd> aim &nbsp; <kbd>R</kbd> reload &nbsp; <kbd>B</kbd> fire mode &nbsp; <kbd>F</kbd> inspect</div>
+  <div><kbd>Q</kbd> <kbd>E</kbd> peek round corners &nbsp; <kbd>LMB</kbd> fire &nbsp; <kbd>RMB</kbd> aim</div>
+  <div><kbd>R</kbd> reload &nbsp; <kbd>B</kbd> fire mode &nbsp; <kbd>F</kbd> inspect</div>
   <div><kbd>TAB</kbd> scoreboard &nbsp; <kbd>ESC</kbd> pause</div>
 </div>
 <div class="panel">

@@ -47,7 +47,7 @@ const DEFAULTS = {
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
     jump: 'Space', crouch: 'ControlLeft', sprint: 'ShiftLeft',
     reload: 'KeyR', inspect: 'KeyF', fireMode: 'KeyB',
-    tactical: 'KeyQ', explosive: 'KeyE', pause: 'Escape', scoreboard: 'Tab'
+    leanLeft: 'KeyQ', leanRight: 'KeyE', pause: 'Escape', scoreboard: 'Tab'
   },
   // per-preset overrides applied on top of the quality preset
   overrides: {}

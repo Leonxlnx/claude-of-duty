@@ -31,9 +31,17 @@ It writes `test-results/performance.json` with frame-time percentiles.
 ## Controls
 
 `W A S D` move · `Shift` sprint · `Ctrl` crouch · `Space` jump ·
-**Left mouse** fire · **Right mouse** aim · `R` reload · `B` fire mode ·
-`F` inspect · `Q` flashbang · `E` frag · `Tab` scoreboard · `Esc` pause ·
+`Q` / `E` peek left and right · **Left mouse** fire · **Right mouse** aim ·
+`R` reload · `B` fire mode · `F` inspect · `Tab` scoreboard · `Esc` pause ·
 `` ` `` cycle render debug views.
+
+Peeking slides the head — and with it the muzzle — off the body so you can
+clear a corner without walking your hitbox into the open. It stops short of
+whatever you lean into, so you cannot peek, or shoot, through a wall.
+
+Dying redeploys you somewhere else entirely: candidate positions are drawn
+from the whole navmesh and scored on enemy distance and line of sight, so no
+two lives start in the same doorway. `Space` skips the remaining wait.
 
 All bindings are remappable in Settings.
 

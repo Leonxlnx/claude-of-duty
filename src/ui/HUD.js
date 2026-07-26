@@ -33,6 +33,7 @@ export class HUD {
       chipCrouch: q('#chip-crouch'),
       chipSprint: q('#chip-sprint'),
       chipAds: q('#chip-ads'),
+      chipPeek: q('#chip-peek'),
       scoreA: q('#score-a'),
       scoreB: q('#score-b'),
       clock: q('#clock'),
@@ -155,7 +156,11 @@ export class HUD {
     this.dom.criticalPulse.classList.toggle('active', frac < 0.28 && rounded > 0);
   }
 
-  updateStance(crouch, sprint, ads) {
+  updateStance(crouch, sprint, ads, peek = false) {
+    if (peek !== this._cache.peek) {
+      this._cache.peek = peek;
+      this.dom.chipPeek.classList.toggle('on', peek);
+    }
     if (crouch !== this._cache.crouch) {
       this._cache.crouch = crouch;
       this.dom.chipCrouch.classList.toggle('on', crouch);
@@ -373,6 +378,7 @@ const TEMPLATE = /* html */`
   <div class="chip" id="chip-crouch">CROUCH</div>
   <div class="chip" id="chip-sprint">SPRINT</div>
   <div class="chip" id="chip-ads">ADS</div>
+  <div class="chip" id="chip-peek">PEEK</div>
 </div>
 
 <div id="ammo">

@@ -89,9 +89,19 @@ function describeContextFailure(statusMessage) {
 // How long a death is held before the respawn wait can be skipped, in seconds.
 const RESPAWN_SKIP_AFTER = 1.1;
 
+// Respawn placement: how many navmesh cells to try, how far an enemy has to be
+// before a line-of-sight check is worth paying for, and the distance at which a
+// candidate is good enough to stop looking.
+const RESPAWN_CANDIDATES = 24;
+const RESPAWN_SIGHT_RANGE = 55;
+const RESPAWN_COMFORT = 34;
+
 // Fraction of the hip-fire field of view kept while aiming.
 const ADS_WORLD_ZOOM = 0.82;
 const ADS_VIEWMODEL_ZOOM = 0.58;
+
+// How far the world camera opens up at a full sprint.
+const SPRINT_FOV_GAIN = 1.07;
 
 const DIFFICULTY_SKILL = {
   recruit: [0.18, 0.38],
@@ -447,23 +457,67 @@ export class Game {
     this.weapon.setTrigger(false);
   }
 
-  _respawnPlayer(initial = false) {
-    const points = this.world.spawns.A;
-    let best = points[0], bestScore = -Infinity;
-    for (const p of points) {
-      let nearest = Infinity;
-      for (const c of this.director.characters) {
-        if (!c.alive || c.team === 'A') continue;
-        nearest = Math.min(nearest, p.distanceToSquared(c.position));
-      }
-      const score = (nearest === Infinity ? 900 : Math.min(nearest, 4900)) + this.rng.next() * 100;
-      if (score > bestScore) { bestScore = score; best = p; }
+  /**
+   * Somewhere in the map to come back in.
+   *
+   * Redeploying at the same end of the street every time turns the second half
+   * of a match into a commute, so candidates come from the whole navmesh rather
+   * than a fixed spawn list. Each one is then scored on how far the nearest
+   * enemy is and whether any of them can already see the spot, so "anywhere"
+   * never means "in front of a muzzle". Good enough wins early — there is no
+   * value in finding the single best cell.
+   */
+  _pickRespawn() {
+    const enemies = [];
+    for (const c of this.director.characters) {
+      if (c.alive && c.team !== this.player.team) enemies.push(c);
     }
-    _spawn.copy(best);
+
+    let best = null, bestScore = -Infinity;
+    for (let attempt = 0; attempt < RESPAWN_CANDIDATES; attempt++) {
+      const p = this.nav.randomPoint(this.rng, _candidate);
+      if (!p) continue;
+
+      let nearest = Infinity, exposed = false;
+      for (const e of enemies) {
+        const d = p.distanceTo(e.position);
+        if (d < nearest) nearest = d;
+        if (!exposed && d < RESPAWN_SIGHT_RANGE) {
+          _sightA.copy(p).y += 1.5;
+          _sightB.copy(e.position).y += 1.5;
+          exposed = !this.world.bvh.occluded(_sightA, _sightB);
+        }
+      }
+
+      let score = Math.min(nearest === Infinity ? 90 : nearest, 60) + this.rng.next() * 6;
+      if (exposed) score -= 55;
+      if (score > bestScore) {
+        bestScore = score;
+        best = (best ?? new THREE.Vector3()).copy(p);
+      }
+      if (!exposed && nearest > RESPAWN_COMFORT) break;
+    }
+    return best;
+  }
+
+  _respawnPlayer(initial = false) {
+    // The opening spawn stays on the team line; a match should start facing
+    // down the street, not dropped in at random.
+    const picked = initial ? null : this._pickRespawn();
+    _spawn.copy(picked ?? this.world.spawns.A[0]);
     _spawn.y = this.world.groundAt(_spawn.x, _spawn.z) + 0.08;
     this.player.spawn(_spawn);
-    // Face the middle of the street.
-    this.player.yaw = Math.atan2(-(0 - _spawn.x), -(0 - _spawn.z));
+
+    // Face the fight: the nearest living enemy if there is one, otherwise the
+    // middle of the street. Coming back in staring at a wall is a free death.
+    let face = null, faceDist = Infinity;
+    for (const c of this.director.characters) {
+      if (!c.alive || c.team === this.player.team) continue;
+      const d = c.position.distanceToSquared(_spawn);
+      if (d < faceDist) { faceDist = d; face = c.position; }
+    }
+    const tx = face ? face.x : 0, tz = face ? face.z : 0;
+    this.player.yaw = Math.atan2(-(tx - _spawn.x), -(tz - _spawn.z));
     this.player.pitch = 0;
     this.weapon.ammo = this.weapon.spec.magSize;
     this.weapon.reserve = this.weapon.spec.reserve;
@@ -528,7 +582,7 @@ export class Game {
       if (this.state === 'playing' && this.player.alive) this.player.look(look.x, look.y);
       this.player.updateView(dt, alpha, this.time);
       this.player.applyToCamera(this.camera);
-      this._applyAdsZoom(this.player.adsBlend);
+      this._applyAdsZoom(this.player.adsBlend, dt);
       this.vmCamera.position.copy(this.camera.position);
       this.vmCamera.quaternion.copy(this.camera.quaternion);
       this.vmCamera.updateMatrixWorld();
@@ -620,11 +674,24 @@ export class Game {
    * the weapon where it is. The reticle stays on the camera axis either way, so
    * the two cameras disagreeing does not move the point of impact.
    */
-  _applyAdsZoom(blend) {
-    if (blend === this._adsZoomApplied) return;
+  _applyAdsZoom(blend, dt = 0) {
+    // A sprint widens the world camera slightly. Speed is only legible as the
+    // rate the edges of the frame move, and at a fixed field of view a fast
+    // run down an open street reads no differently from a walk. The viewmodel
+    // camera is deliberately left out: widening it would swing the weapon
+    // around the frame every time the player breaks into a run.
+    const wantSprint = this.player?.sprinting && this.player.alive ? 1 : 0;
+    this._sprintFov = dt > 0
+      ? this._sprintFov + (wantSprint - this._sprintFov) * Math.min(1, dt * 6)
+      : wantSprint;
+
+    if (blend === this._adsZoomApplied && this._sprintFov === this._sprintFovApplied) return;
     this._adsZoomApplied = blend;
+    this._sprintFovApplied = this._sprintFov;
+
     const t = blend * blend * (3 - 2 * blend);
-    this.camera.fov = this._baseFov * (1 - t * (1 - ADS_WORLD_ZOOM));
+    const sprint = 1 + this._sprintFov * (SPRINT_FOV_GAIN - 1) * (1 - t);
+    this.camera.fov = this._baseFov * (1 - t * (1 - ADS_WORLD_ZOOM)) * sprint;
     this.camera.updateProjectionMatrix();
     this.vmCamera.fov = this._baseVmFov * (1 - t * (1 - ADS_VIEWMODEL_ZOOM));
     this.vmCamera.updateProjectionMatrix();
@@ -662,7 +729,10 @@ export class Game {
     const w = this.weapon.hudState();
     this.hud.updateAmmo(w.ammo, w.reserve, w.mode, w.reloading);
     this.hud.updateHealth(this.player.health, this.player.maxHealth);
-    this.hud.updateStance(this.player.crouched, this.player.sprinting, this.player.adsBlend > 0.6);
+    this.hud.updateStance(
+      this.player.crouched, this.player.sprinting,
+      this.player.adsBlend > 0.6, Math.abs(this.player.leanBlend) > 0.25
+    );
     this.hud.updateScore(
       this.match.scores.A, this.match.scores.B, this.match.timeLeft, this.match.scoreLimit
     );
@@ -712,7 +782,9 @@ export class Game {
     this.vmCamera.aspect = aspect;
     this.vmCamera.fov = this._baseVmFov;
     this.vmCamera.updateProjectionMatrix();
-    this._adsZoomApplied = 0;
+    this._adsZoomApplied = -1;
+    this._sprintFovApplied = -1;
+    this._sprintFov = this._sprintFov ?? 0;
     this._applyAdsZoom(this.player?.adsBlend ?? 0);
     this.graph.resize(w, h, true);
   }
@@ -809,5 +881,8 @@ export class Game {
 const _dir = new THREE.Vector3();
 const _origin = new THREE.Vector3();
 const _spawn = new THREE.Vector3();
+const _candidate = new THREE.Vector3();
+const _sightA = new THREE.Vector3();
+const _sightB = new THREE.Vector3();
 const _proj = new THREE.Vector3();
 const _look = new THREE.Vector2();

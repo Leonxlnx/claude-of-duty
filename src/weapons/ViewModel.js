@@ -260,7 +260,7 @@ export class ViewModel {
     this.swaySpring.update(dt);
 
     // ------------------------------------------------------------ movement
-    const speed = THREE.MathUtils.clamp(player.speed2D / 4.25, 0, 1.6);
+    const speed = player.speedNorm;
     const grounded = player.controller.grounded;
     const bobRate = player.sprinting ? 10.4 : player.crouched ? 6.2 : 8.4;
     if (grounded) this.bobPhase = (this.bobPhase + dt * bobRate * Math.min(speed, 1.4)) % TAU;
@@ -281,6 +281,14 @@ export class ViewModel {
     // vertical velocity throws the weapon on jumps and landings
     const airY = THREE.MathUtils.clamp(-player.velocity.y * 0.0045, -0.03, 0.03) * (grounded ? 0 : 1);
 
+    // The weapon lives in camera space, so the camera's lean roll does not tip
+    // it on screen — the world rotates around a weapon that stays put. A little
+    // roll back the other way, plus a drift away from the lean, reads as the
+    // shoulder trailing the head rather than the arms being welded to the view.
+    const lean = player.leanBlend;
+    const leanX = -lean * 0.014;
+    const leanRoll = lean * 0.062;
+
     this.recoilPos.target.set(0, 0, 0);
     this.recoilRot.target.set(0, 0, 0);
     this.recoilPos.update(dt);
@@ -289,14 +297,14 @@ export class ViewModel {
     // --------------------------------------------------------- final compose
     const pos = this.weapon.position;
     pos.copy(this.posSpring.value);
-    pos.x += this.swaySpring.value.x + bobX + breathX + this.recoilPos.value.x;
+    pos.x += this.swaySpring.value.x + bobX + breathX + leanX + this.recoilPos.value.x;
     pos.y += this.swaySpring.value.y + bobY + breathY + airY + this.recoilPos.value.y;
     pos.z += this.recoilPos.value.z * 0.02;
 
     _euler.set(
       this.rotSpring.value.x + bobPitch + this.recoilRot.value.x * 0.02 + breathRot * 0.5 - lookDelta.y * 0.9,
       this.rotSpring.value.y + this.recoilRot.value.y * 0.02 + breathRot - lookDelta.x * 1.1,
-      this.rotSpring.value.z + bobRoll + this.recoilRot.value.z * 0.02,
+      this.rotSpring.value.z + bobRoll + leanRoll + this.recoilRot.value.z * 0.02,
       'YXZ'
     );
     this.weapon.quaternion.setFromEuler(_euler);
