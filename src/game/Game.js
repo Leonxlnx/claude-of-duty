@@ -24,6 +24,7 @@ import { AudioEngine } from '../audio/AudioEngine.js';
 import { HUD } from '../ui/HUD.js';
 import { Menu } from '../ui/Menu.js';
 import { Loading } from '../ui/Loading.js';
+import { showFatalOverlay } from '../ui/Fatal.js';
 
 /**
  * Assembles every subsystem and owns the frame.
@@ -65,6 +66,33 @@ function verticalFov(horizontalDeg, aspect) {
   return 2 * Math.atan(Math.tan(h) / aspect) * 180 / Math.PI;
 }
 
+/**
+ * Turn the browser's context creation message into something a player can act
+ * on. The common one by far is Chrome having switched the GPU off for the rest
+ * of the session after the GPU process died, which looks identical to
+ * unsupported hardware unless you read the status message.
+ */
+function describeContextFailure(statusMessage) {
+  const msg = String(statusMessage);
+  if (/Disabled|BindToCurrentSequence|GPU process/i.test(msg)) {
+    return 'The browser has switched off GPU access for this session, usually after a '
+      + 'graphics driver reset. Fully quit the browser and reopen it — a reload will not '
+      + 'bring it back.';
+  }
+  if (/blocklist|blacklist|software/i.test(msg)) {
+    return 'The browser is blocking hardware acceleration for this GPU. Enable '
+      + '"Use graphics acceleration when available" in the browser settings and restart it.';
+  }
+  return msg ? `Error creating WebGL context: ${msg}` : '';
+}
+
+// How long a death is held before the respawn wait can be skipped, in seconds.
+const RESPAWN_SKIP_AFTER = 1.1;
+
+// Fraction of the hip-fire field of view kept while aiming.
+const ADS_WORLD_ZOOM = 0.82;
+const ADS_VIEWMODEL_ZOOM = 0.58;
+
 const DIFFICULTY_SKILL = {
   recruit: [0.18, 0.38],
   regular: [0.38, 0.62],
@@ -94,10 +122,23 @@ export class Game {
     this.loading = loading;
 
     await loading.step(0.04, 'Creating context');
-    this.renderer = new THREE.WebGLRenderer({
-      canvas: this.canvas, antialias: false, alpha: false, stencil: false,
-      depth: true, powerPreference: 'high-performance', preserveDrawingBuffer: false
-    });
+    // The browser reports why it refused through an event on the canvas, not
+    // through the exception, and the reason matters: a driver that has been
+    // switched off after repeated GPU crashes needs a very different fix from
+    // hardware that never supported WebGL2.
+    let creationError = '';
+    this.canvas.addEventListener('webglcontextcreationerror',
+      (e) => { creationError = e.statusMessage || ''; }, { once: true });
+
+    try {
+      this.renderer = new THREE.WebGLRenderer({
+        canvas: this.canvas, antialias: false, alpha: false, stencil: false,
+        depth: true, powerPreference: 'high-performance', preserveDrawingBuffer: false
+      });
+    } catch (err) {
+      throw new Error(describeContextFailure(creationError) || err.message);
+    }
+    this._bindContextLoss();
     this.renderer.setPixelRatio(1);
     this.renderer.autoClear = true;
     this.renderer.setSize(window.innerWidth, window.innerHeight, false);
@@ -111,28 +152,40 @@ export class Game {
     if (qp.has('notaa')) this.quality.taa = false;
     if (qp.has('noao')) this.quality.aoEnabled = false;
 
-    await loading.step(0.12, 'Generating materials');
-    this.materialLibrary = new MaterialLibrary(this.renderer, 512).generate();
+    // Start the material shaders compiling and do not wait for them. The
+    // driver compiles on its own threads, so everything below — the render
+    // graph, the sky, the whole district, the navmesh — runs for free inside
+    // that window instead of after it. Only the texture arrays themselves have
+    // to exist now, and the constructor allocates those.
+    await loading.step(0.10, 'Generating materials');
+    this.materialLibrary = new MaterialLibrary(this.renderer, 512);
+    const materialsCompiled = this.materialLibrary.compile();
 
-    await loading.step(0.24, 'Building render graph');
+    await loading.step(0.16, 'Building render graph');
     this.graph = new RenderGraph(this.renderer, this.quality);
     this.graph.resize(window.innerWidth, window.innerHeight, true);
     this.graph.debugView = parseInt(qp.get('debug') ?? '0', 10) || 0;
 
-    await loading.step(0.32, 'Baking sky and irradiance');
+    await loading.step(0.22, 'Baking sky and irradiance');
     this.graph.sky.setSun(112, 41);
     this.graph.sky.bake();
     this.graph.updateSkyUniforms();
 
     this.factory = new MaterialFactory(this.graph.lightUniforms, this.materialLibrary);
 
-    await loading.step(0.42, 'Generating district');
+    await loading.step(0.32, 'Generating district');
     this.world = new World(this.factory).build(WORLD_SEED);
 
-    await loading.step(0.60, 'Baking navigation');
+    await loading.step(0.50, 'Baking navigation');
     this.nav = new NavGrid(this.world.bvh, this.world.bounds).bake();
 
-    await loading.step(0.70, 'Arming systems');
+    await loading.step(0.62, 'Painting surfaces');
+    await materialsCompiled;
+    await this.materialLibrary.draw(
+      (f) => loading.tick(0.62 + f * 0.10, `Painting surfaces ${Math.round(f * 100)}%`)
+    );
+
+    await loading.step(0.74, 'Arming systems');
     // Sized for the heaviest preset; the live cap follows the quality setting.
     this.rigid = new RigidWorld(this.world.bvh, 260);
     this.rigid.maxBodies = this.quality.maxRigidBodies;
@@ -187,11 +240,38 @@ export class Game {
 
     await loading.step(1.0, 'Ready');
     loading.done();
+    this.bootTimings = loading.timings;
 
     this.state = 'menu';
     this.menu.showStart();
     this._startLoop();
     return this;
+  }
+
+  /**
+   * A lost context leaves every buffer, texture and program invalid, and three
+   * cannot rebuild the render graph underneath us. Stopping the loop and saying
+   * so beats several thousand GL errors a second and a frozen tab.
+   */
+  _bindContextLoss() {
+    this.canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      this.contextLost = true;
+      this.loop?.stop();
+      if (this.input) {
+        this.input.enabled = false;
+        this.input.releaseLock();
+      }
+      showFatalOverlay(this.uiRoot, 'Graphics context lost',
+        'The graphics driver reset. Reload the page to start a new match.');
+    });
+    // Chrome keeps a context alive until the page is collected, and it caps how
+    // many can exist at once. Releasing on pagehide means a player who reloads
+    // a few times does not run the tab out of contexts.
+    window.addEventListener('pagehide', () => {
+      try { this.renderer?.dispose(); } catch { /* already gone */ }
+      try { this.renderer?.forceContextLoss(); } catch { /* already gone */ }
+    });
   }
 
   /**
@@ -422,7 +502,12 @@ export class Game {
     } else {
       this.weapon.setTrigger(false);
       this.respawnTimer -= dt;
-      if (this.respawnTimer <= 0) this._respawnPlayer();
+      // A short beat so the kill registers, then the wait is the player's to
+      // skip. Nobody wants to sit and watch a timer.
+      const canSkip = this.respawnTimer <= this.match.respawnDelay - RESPAWN_SKIP_AFTER;
+      const skipped = canSkip
+        && (this.input.actionPressed('jump') || this.input.actionPressed('fire'));
+      if (this.respawnTimer <= 0 || skipped) this._respawnPlayer();
     }
 
     this.player.update(dt, this.time);
@@ -443,6 +528,7 @@ export class Game {
       if (this.state === 'playing' && this.player.alive) this.player.look(look.x, look.y);
       this.player.updateView(dt, alpha, this.time);
       this.player.applyToCamera(this.camera);
+      this._applyAdsZoom(this.player.adsBlend);
       this.vmCamera.position.copy(this.camera.position);
       this.vmCamera.quaternion.copy(this.camera.quaternion);
       this.vmCamera.updateMatrixWorld();
@@ -483,6 +569,7 @@ export class Game {
 
     this._captureRequest?.();
     this._updateHud(dt);
+    this.input.endFrame();
     this._trackPerformance(performance.now() - t0, dt);
   }
 
@@ -520,6 +607,27 @@ export class Game {
     this.vmCamera.quaternion.copy(this.camera.quaternion);
     this.vmCamera.updateMatrixWorld();
     this.viewModel.root.visible = false;
+  }
+
+  /**
+   * Narrow both cameras while aiming.
+   *
+   * The world only tightens a little, the way a 1x optic actually behaves. The
+   * viewmodel tightens much harder, because the alternative is moving the gun
+   * toward the eye until the sight window is big enough to aim through, and at
+   * that distance the receiver clips the near plane and fills half the screen.
+   * Magnifying the viewmodel camera instead grows the sight picture and leaves
+   * the weapon where it is. The reticle stays on the camera axis either way, so
+   * the two cameras disagreeing does not move the point of impact.
+   */
+  _applyAdsZoom(blend) {
+    if (blend === this._adsZoomApplied) return;
+    this._adsZoomApplied = blend;
+    const t = blend * blend * (3 - 2 * blend);
+    this.camera.fov = this._baseFov * (1 - t * (1 - ADS_WORLD_ZOOM));
+    this.camera.updateProjectionMatrix();
+    this.vmCamera.fov = this._baseVmFov * (1 - t * (1 - ADS_VIEWMODEL_ZOOM));
+    this.vmCamera.updateProjectionMatrix();
   }
 
   /** Lower the weapon when the muzzle would otherwise clip a wall. */
@@ -566,7 +674,10 @@ export class Game {
 
     if (!this.player.alive) {
       this.hud.setDeathFade(Math.min(0.55, (this.match.respawnDelay - this.respawnTimer) * 0.5));
-      this.hud.updateRespawn(this.respawnTimer);
+      this.hud.updateRespawn(
+        this.respawnTimer,
+        this.respawnTimer <= this.match.respawnDelay - RESPAWN_SKIP_AFTER
+      );
     }
 
     // Damage numbers are projected here, once, rather than tracked in 3D.
@@ -594,11 +705,15 @@ export class Game {
     // The FOV setting is horizontal, the way players read it; three wants
     // vertical.
     this.camera.aspect = aspect;
-    this.camera.fov = verticalFov(Settings.data.fov, aspect);
+    this._baseFov = verticalFov(Settings.data.fov, aspect);
+    this._baseVmFov = verticalFov(Settings.data.viewmodelFov, aspect);
+    this.camera.fov = this._baseFov;
     this.camera.updateProjectionMatrix();
     this.vmCamera.aspect = aspect;
-    this.vmCamera.fov = verticalFov(Settings.data.viewmodelFov, aspect);
+    this.vmCamera.fov = this._baseVmFov;
     this.vmCamera.updateProjectionMatrix();
+    this._adsZoomApplied = 0;
+    this._applyAdsZoom(this.player?.adsBlend ?? 0);
     this.graph.resize(w, h, true);
   }
 

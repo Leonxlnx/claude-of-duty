@@ -21,7 +21,13 @@ export class Input {
     this.enabled = true;
     this.onPointerLockChange = null;
     this.onPauseRequested = null;
-    this._blockedCodes = new Set(['Tab', 'F1', 'F3', 'F5']);
+    // Keys the browser must keep even while the pointer is locked. Everything
+    // else is swallowed: crouch is Ctrl, so Ctrl+D bookmarks the page, Ctrl+S
+    // saves it and Ctrl+P opens print — all reachable by crouch-walking.
+    this._passThroughCodes = new Set(['F5', 'F11', 'F12']);
+    // ...and while it is not locked the menu is a normal focusable document, so
+    // only the keys that would move focus out from under it are taken.
+    this._blockedCodes = new Set(['Tab', 'F1', 'F3']);
 
     this._bind();
   }
@@ -29,7 +35,13 @@ export class Input {
   _bind() {
     const kd = (e) => {
       if (!this.enabled) return;
-      if (this._blockedCodes.has(e.code)) e.preventDefault();
+      // Escape is the browser's own way out of pointer lock and cannot be
+      // cancelled; F5/F11/F12 stay usable on purpose. Ctrl+W and Ctrl+T are
+      // reserved by the browser and cannot be blocked from a page at all,
+      // which is why nothing in the default binds pairs with them.
+      if (this.locked ? !this._passThroughCodes.has(e.code) : this._blockedCodes.has(e.code)) {
+        e.preventDefault();
+      }
       if (e.repeat) return;
       if (!this.keys.get(e.code)) this.pressedThisFrame.add(e.code);
       this.keys.set(e.code, true);
@@ -64,7 +76,9 @@ export class Input {
 
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.canvas;
-      if (!this.locked) {
+      if (this.locked) this._lockKeyboard();
+      else {
+        this._unlockKeyboard();
         this.keys.clear();
         this.buttons = [false, false, false];
       }
@@ -76,18 +90,47 @@ export class Input {
     });
   }
 
+  /**
+   * Take the mouse, and fullscreen with it.
+   *
+   * Fullscreen is not cosmetic here: it is the only state in which the Keyboard
+   * Lock API will hand over Ctrl+W and Ctrl+T. Crouch is Ctrl, so without it a
+   * player who crouch-walks forward closes the tab, and no amount of
+   * preventDefault on the page can stop that.
+   */
   async requestLock() {
     if (this.locked) return;
-    try {
-      const p = this.canvas.requestPointerLock({ unadjustedMovement: true });
-      if (p && p.catch) await p.catch(() => this.canvas.requestPointerLock());
-    } catch {
-      try { this.canvas.requestPointerLock(); } catch { /* pointer lock unavailable */ }
+    if (!document.fullscreenElement && Settings.data.fullscreenOnPlay !== false) {
+      try { await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); } catch { /* denied or unsupported */ }
     }
+    // Raw mouse input is the one we want, but it is not everywhere, and both
+    // the call and the promise it may or may not return can fail. Every path
+    // has to swallow, or a denied lock surfaces as an unhandled rejection.
+    const attempt = async (options) => {
+      try { await this.canvas.requestPointerLock(options); return true; } catch { return false; }
+    };
+    if (!await attempt({ unadjustedMovement: true })) await attempt(undefined);
   }
 
   releaseLock() {
     if (document.pointerLockElement) document.exitPointerLock();
+  }
+
+  /**
+   * A page cannot cancel Ctrl+W or Ctrl+T with preventDefault. The Keyboard
+   * Lock API can, but only in fullscreen, so this is a bonus on top of the
+   * blanket preventDefault rather than a replacement for it.
+   */
+  _lockKeyboard() {
+    if (!document.fullscreenElement || !navigator.keyboard?.lock) return;
+    navigator.keyboard.lock().catch(() => { /* not permitted; preventDefault still applies */ });
+    this._keyboardLocked = true;
+  }
+
+  _unlockKeyboard() {
+    if (!this._keyboardLocked) return;
+    this._keyboardLocked = false;
+    try { navigator.keyboard.unlock(); } catch { /* already released */ }
   }
 
   /**
@@ -114,11 +157,24 @@ export class Input {
     return mouse >= 0 ? this.buttons[mouse] === true : this.keys.get(code) === true;
   }
 
+  /**
+   * Edge-triggered actions, consumed on read.
+   *
+   * The simulation runs a fixed step and can take several substeps per rendered
+   * frame, so a press that merely sits in the set until the end of the frame
+   * fires its action once per substep — one tap of the fire selector would walk
+   * through every mode. Consuming here makes it exactly once per press.
+   */
   actionPressed(name) {
     const code = Settings.data.keybinds[name];
     if (!code) return false;
     const mouse = mouseIndex(code);
-    return mouse >= 0 ? this.buttonsPressed[mouse] === true : this.pressedThisFrame.has(code);
+    if (mouse >= 0) {
+      if (!this.buttonsPressed[mouse]) return false;
+      this.buttonsPressed[mouse] = false;
+      return true;
+    }
+    return this.pressedThisFrame.delete(code);
   }
 
   /**
@@ -134,6 +190,7 @@ export class Input {
     return this._look;
   }
 
+  /** Drop any edge nobody consumed, so it cannot leak into the next frame. */
   endFrame() {
     this.pressedThisFrame.clear();
     this.releasedThisFrame.clear();

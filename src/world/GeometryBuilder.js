@@ -146,13 +146,15 @@ export class GeometryBuilder {
     local(-hx, -hy, hz, _c[4]); local(hx, -hy, hz, _c[5]);
     local(hx, hy, hz, _c[6]); local(-hx, hy, hz, _c[7]);
 
+    // Counter-clockwise seen from outside the box, which is what addQuad's
+    // (b-a) x (d-a) needs to produce an outward normal.
     const faceDefs = [
-      [1, 5, 6, 2, 0], // +X
-      [4, 0, 3, 7, 1], // -X
-      [3, 2, 6, 7, 2], // +Y
-      [4, 5, 1, 0, 3], // -Y
-      [5, 4, 7, 6, 4], // +Z
-      [0, 1, 2, 3, 5]  // -Z
+      [1, 2, 6, 5, 0], // +X
+      [4, 7, 3, 0, 1], // -X
+      [3, 7, 6, 2, 2], // +Y
+      [4, 0, 1, 5, 3], // -Y
+      [5, 6, 7, 4, 4], // +Z
+      [0, 3, 2, 1, 5]  // -Z
     ];
 
     for (const [i0, i1, i2, i3, faceIndex] of faceDefs) {
@@ -179,7 +181,10 @@ export class GeometryBuilder {
     }
     for (let i = 0; i < segments; i++) {
       const b = start + i * 2;
-      this.index.push(b, b + 2, b + 3, b, b + 3, b + 1);
+      // Wound so the face normal comes out radially outward, matching the
+      // per-vertex normals pushed above. Reversed, every curved surface in the
+      // game is a hole that only shows its far wall.
+      this.index.push(b, b + 3, b + 2, b, b + 1, b + 3);
       this.triangleCount += 2;
     }
     if (caps) {
@@ -191,7 +196,7 @@ export class GeometryBuilder {
         this._pushVertex(px, cy + height, pz, 0, 1, 0, px * uvScale, pz * uvScale, layer, tint, wear);
       }
       for (let i = 0; i < segments; i++) {
-        this.index.push(capTop, capTop + 1 + i, capTop + 2 + i);
+        this.index.push(capTop, capTop + 2 + i, capTop + 1 + i);
         this.triangleCount++;
       }
     }
@@ -248,7 +253,7 @@ export class GeometryBuilder {
       for (let s = 0; s < segments; s++) {
         const a = start + r * (segments + 1) + s;
         const b = a + segments + 1;
-        this.index.push(a, b, a + 1, a + 1, b, b + 1);
+        this.index.push(a, a + 1, b, a + 1, b + 1, b);
         this.triangleCount += 2;
       }
     }
@@ -286,7 +291,7 @@ export class GeometryBuilder {
       for (let s = 0; s < sides; s++) {
         const a = start + i * (sides + 1) + s;
         const b = a + sides + 1;
-        this.index.push(a, b, a + 1, a + 1, b, b + 1);
+        this.index.push(a, a + 1, b, a + 1, b + 1, b);
         this.triangleCount += 2;
       }
     }

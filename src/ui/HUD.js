@@ -233,11 +233,18 @@ export class HUD {
   showRespawn(killerName, seconds) {
     this.dom.respawn.classList.add('show');
     this.dom.respawnName.textContent = killerName;
-    this.dom.respawnTimer.textContent = `RESPAWN IN ${seconds.toFixed(1)}`;
+    this._cache.respawn = null;
+    this.updateRespawn(seconds, false);
   }
 
-  updateRespawn(seconds) {
-    this.dom.respawnTimer.textContent = `RESPAWN IN ${Math.max(0, seconds).toFixed(1)}`;
+  updateRespawn(seconds, canSkip = false) {
+    const text = canSkip
+      ? 'REDEPLOY  [SPACE]'
+      : `RESPAWN IN ${Math.max(0, seconds).toFixed(1)}`;
+    if (text === this._cache.respawn) return;
+    this._cache.respawn = text;
+    this.dom.respawnTimer.textContent = text;
+    this.dom.respawnTimer.classList.toggle('ready', canSkip);
   }
 
   hideRespawn() { this.dom.respawn.classList.remove('show'); }

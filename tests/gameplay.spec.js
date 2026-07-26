@@ -79,6 +79,61 @@ test.describe('gunplay', () => {
     session.assertClean();
   });
 
+  // A tapped key used to stay in the "pressed this frame" set for the rest of
+  // the match, because nothing ever cleared it. One reload then re-triggered
+  // itself the instant firing dropped the magazine below full, so the weapon
+  // let exactly one round go and started reloading again, forever.
+  test('a reload does not re-arm itself on the next shot', async ({ page }) => {
+    const session = await boot(page, '?auto=1');
+    await settle(page, 1500);
+
+    await page.evaluate(async () => {
+      const h = window.__harness;
+      h.fire(true);
+      await new Promise((r) => setTimeout(r, 500));
+      h.fire(false);
+    });
+    await settle(page, 300);
+
+    await page.evaluate(() => window.__harness.tap('KeyR'));
+    await page.waitForFunction(() => window.__game.weapon.ammo === 30, { timeout: 20_000 });
+    await settle(page, 300);
+
+    const shots = await page.evaluate(async () => {
+      const w = window.__game.weapon;
+      const before = w.totalShots;
+      window.__harness.fire(true);
+      await new Promise((r) => setTimeout(r, 600));
+      window.__harness.fire(false);
+      await new Promise((r) => setTimeout(r, 200));
+      return { fired: w.totalShots - before, reloading: w.reloading, ammo: w.ammo };
+    });
+
+    expect(shots.fired).toBeGreaterThan(4);
+    expect(shots.reloading).toBe(false);
+    expect(shots.ammo).toBeLessThan(30);
+    session.assertClean();
+  });
+
+  test('one tap of the fire selector advances exactly one mode', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 1200);
+
+    const modes = await page.evaluate(async () => {
+      const seen = [window.__game.weapon.fireMode];
+      for (let i = 0; i < 3; i++) {
+        await window.__harness.tap('KeyB');
+        await new Promise((r) => setTimeout(r, 220));
+        seen.push(window.__game.weapon.fireMode);
+      }
+      return seen;
+    });
+
+    // The simulation takes several fixed substeps per frame; an edge that is
+    // not consumed on read walks the selector through every mode per tap.
+    expect(modes).toEqual([0, 1, 2, 0]);
+  });
+
   test('a traced shot damages the thing it is pointed at', async ({ page }) => {
     await boot(page, '?auto=1');
     await settle(page, 1500);

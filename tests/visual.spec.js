@@ -182,6 +182,46 @@ test('aiming down sights centres the optic and narrows the view', async ({ page 
   expect(Math.abs(ads.reticleY - 0.5)).toBeLessThan(0.08);
 });
 
+// Back faces are culled, so a primitive wound the wrong way round is simply
+// not drawn and the object reads as missing a side. Cylinders, spheres and
+// tubes carry authored normals, which makes the check exact: the winding of
+// every triangle has to agree with the normals of its own vertices.
+test('every world triangle faces the way it is lit', async ({ page }) => {
+  await boot(page, '?auto=1');
+  await settle(page, 1500);
+
+  const meshes = await page.evaluate(() => {
+    const out = [];
+    const check = (root, label) => {
+      root.traverse((o) => {
+        const geo = o.geometry;
+        if (!geo?.index || !geo.attributes.position || !geo.attributes.normal) return;
+        if (o.material?.side === 2) return;    // two-sided cloth has no front
+        const p = geo.attributes.position.array;
+        const n = geo.attributes.normal.array;
+        const idx = geo.index.array;
+        let inverted = 0;
+        for (let i = 0; i < idx.length; i += 3) {
+          const a = idx[i] * 3, b = idx[i + 1] * 3, c = idx[i + 2] * 3;
+          const e1 = [p[b] - p[a], p[b + 1] - p[a + 1], p[b + 2] - p[a + 2]];
+          const e2 = [p[c] - p[a], p[c + 1] - p[a + 1], p[c + 2] - p[a + 2]];
+          const d = (e1[1] * e2[2] - e1[2] * e2[1]) * n[a]
+            + (e1[2] * e2[0] - e1[0] * e2[2]) * n[a + 1]
+            + (e1[0] * e2[1] - e1[1] * e2[0]) * n[a + 2];
+          if (d < 0) inverted++;
+        }
+        out.push({ name: `${label}:${geo.name || o.name || '?'}`, tris: idx.length / 3, inverted });
+      });
+    };
+    check(window.__game.world.scene, 'world');
+    check(window.__game.viewModel.root, 'viewmodel');
+    return out;
+  });
+
+  expect(meshes.length).toBeGreaterThan(4);
+  expect(meshes.filter((m) => m.inverted > 0)).toEqual([]);
+});
+
 test('screenshots for review', async ({ page }, testInfo) => {
   await boot(page, '?auto=1&dynres=0');
   await settle(page, 4000);

@@ -14,6 +14,7 @@ import { SURFACE_INFO } from '../physics/BVH.js';
  */
 
 const STANCE = { STAND: 0, CROUCH: 1 };
+const TAU = Math.PI * 2;
 
 const SPEED = {
   walk: 4.25,
@@ -65,7 +66,7 @@ export class Player {
     this.eyeHeight = 1.62;
     this.crouchEyeHeight = 1.06;
     this.bobPhase = 0;
-    this.bobAmount = new Spring3(16, 1.0);
+    this.bobAmount = new Spring3(26, 1.0);
     this.leanSpring = new Spring(0, 15, 0.85);
     this.pitchKick = new Spring(0, 26, 0.62);
     this.yawKick = new Spring(0, 24, 0.66);
@@ -85,6 +86,7 @@ export class Player {
 
     this._prevPosition = new THREE.Vector3();
     this._renderPosition = new THREE.Vector3();
+    this.stepSmooth = 0;
     this.velocity = this.controller.velocity;
     this.spawnProtect = 0;
   }
@@ -96,6 +98,7 @@ export class Player {
     this.controller.position.copy(point);
     this.controller.velocity.set(0, 0, 0);
     this._prevPosition.copy(point);
+    this.stepSmooth = 0;
     this.health = this.maxHealth;
     this.alive = true;
     this.stance = STANCE.STAND;
@@ -223,6 +226,14 @@ export class Player {
     _disp.copy(vel).multiplyScalar(dt);
     this.controller.move(dt, _disp);
 
+    // Cancel the controller's vertical teleports out of the eye and let the
+    // offset bleed off over a few frames. Without this, walking over kerbs and
+    // road camber shows up as a hard vertical tick every step.
+    this.stepSmooth = THREE.MathUtils.clamp(
+      this.stepSmooth - this.controller.stepCorrection,
+      -this.controller.stepOffset, this.controller.stepOffset
+    );
+
     this.speed2D = Math.hypot(vel.x, vel.z);
 
     // ---- landing
@@ -278,12 +289,18 @@ export class Player {
     const speedNorm = THREE.MathUtils.clamp(this.speed2D / SPEED.walk, 0, 1.6);
     const grounded = c.grounded;
     const bobRate = this.sprinting ? 10.4 : this.crouched ? 6.2 : 8.4;
-    if (grounded) this.bobPhase += dt * bobRate * Math.min(speedNorm, 1.4);
+    if (grounded) {
+      this.bobPhase = (this.bobPhase + dt * bobRate * Math.min(speedNorm, 1.4)) % TAU;
+    }
 
     const bobScale = (grounded ? speedNorm : 0) * (1 - this.adsBlend * 0.78) * Settings.data.cameraShake;
+    // A smooth figure-eight: lateral at stride rate, vertical at twice that.
+    // abs(sin) is the obvious way to get two dips per stride and it is wrong —
+    // it has a corner at every zero, so the head changes vertical direction
+    // instantly and running reads as a stutter rather than a gait.
     this.bobAmount.target.set(
-      Math.sin(this.bobPhase) * 0.031 * bobScale,
-      Math.abs(Math.sin(this.bobPhase * 2 + 0.4)) * -0.026 * bobScale,
+      Math.sin(this.bobPhase) * 0.026 * bobScale,
+      Math.cos(this.bobPhase * 2) * -0.012 * bobScale,
       0
     );
     this.bobAmount.update(dt);
@@ -304,8 +321,9 @@ export class Player {
     const breathAmp = (0.0016 + (1 - THREE.MathUtils.clamp(this.health / 100, 0, 1)) * 0.0035)
       * (1 - this.adsBlend * 0.6);
 
+    this.stepSmooth *= Math.exp(-dt / 0.055);
     this.eye.copy(this._renderPosition);
-    this.eye.y += this.heightSpring.value + this.landDip.value * 0.055;
+    this.eye.y += this.heightSpring.value + this.landDip.value * 0.055 + this.stepSmooth;
 
     const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw);
     const bob = this.bobAmount.value;

@@ -70,8 +70,9 @@ export class ClothSystem {
           for (let i = 0; i < AWNING_SEGS; i++) {
             const a = start + j * (AWNING_SEGS + 1) + i;
             const b = a + AWNING_SEGS + 1;
+            // The cloth material is already double sided, so a second copy of
+            // every triangle wound the other way buys nothing but draw cost.
             index.push(a, b, a + 1, a + 1, b, b + 1);
-            index.push(a + 1, b, a, b + 1, b, a + 1); // back faces so it reads from underneath
           }
         }
         this.pieces.push({ type: 'awning', start, count: vCount - start });
@@ -106,7 +107,6 @@ export class ClothSystem {
               const a = start + r * (cols + 1) + c;
               const b = a + cols + 1;
               index.push(a, b, a + 1, a + 1, b, b + 1);
-              index.push(a + 1, b, a, b + 1, b, a + 1);
             }
           }
         }
@@ -123,7 +123,6 @@ export class ClothSystem {
         for (let i = 0; i < segs; i++) {
           const a = start + i * 2;
           index.push(a, a + 2, a + 3, a, a + 3, a + 1);
-          index.push(a + 3, a + 2, a, a + 1, a + 3, a);
         }
       } else if (def.type === 'palm') {
         for (let f = 0; f < def.fronds; f++) {
@@ -149,7 +148,6 @@ export class ClothSystem {
           for (let s = 0; s < segs; s++) {
             const v0 = start + s * 2;
             index.push(v0, v0 + 2, v0 + 3, v0, v0 + 3, v0 + 1);
-            index.push(v0 + 3, v0 + 2, v0, v0 + 1, v0 + 3, v0);
           }
         }
       }
@@ -300,6 +298,21 @@ export class CableSystem {
     let v = 0;
 
     for (const def of cableDefs) {
+      // Cross-section frame perpendicular to the run. Extruding a ring in the
+      // XY plane instead flattens any cable that is not going north-south, and
+      // reverses its winding depending on which way round the two ends were
+      // authored.
+      const ax = def.b.x - def.a.x, ay = def.b.y - def.a.y, az = def.b.z - def.a.z;
+      const al = Math.hypot(ax, ay, az) || 1;
+      const dx = ax / al, dy = ay / al, dz = az / al;
+      let rx = -dz, ry = 0, rz = dx;            // worldUp x direction
+      const rl = Math.hypot(rx, ry, rz);
+      if (rl < 1e-4) { rx = 1; ry = 0; rz = 0; } else { rx /= rl; ry /= rl; rz /= rl; }
+      def.frame = {
+        rx, ry, rz,
+        ux: dy * rz - dz * ry, uy: dz * rx - dx * rz, uz: dx * ry - dy * rx
+      };
+
       const start = v;
       for (let i = 0; i <= CABLE_SEGS; i++) {
         for (let s = 0; s < CABLE_SIDES; s++) {
@@ -318,7 +331,7 @@ export class CableSystem {
           const b = start + i * CABLE_SIDES + ((s + 1) % CABLE_SIDES);
           const c = a + CABLE_SIDES;
           const d = b + CABLE_SIDES;
-          index.push(a, c, d, a, d, b);
+          index.push(a, d, c, a, b, d);
         }
       }
     }
@@ -358,15 +371,19 @@ export class CableSystem {
         const px = def.a.x + (def.b.x - def.a.x) * t;
         const py = def.a.y + (def.b.y - def.a.y) * t - catenary + flap * 0.4;
         const pz = def.a.z + (def.b.z - def.a.z) * t + flap;
+        const f = def.frame;
         for (let s = 0; s < CABLE_SIDES; s++) {
           const a = (s / CABLE_SIDES) * Math.PI * 2;
-          const nx = Math.cos(a), ny = Math.sin(a);
+          const ca = Math.cos(a), sa = Math.sin(a);
+          const nx = f.rx * ca + f.ux * sa;
+          const ny = f.ry * ca + f.uy * sa;
+          const nz = f.rz * ca + f.uz * sa;
           out[v * 3] = px + nx * def.radius;
           out[v * 3 + 1] = py + ny * def.radius;
-          out[v * 3 + 2] = pz;
+          out[v * 3 + 2] = pz + nz * def.radius;
           nrm[v * 3] = nx;
           nrm[v * 3 + 1] = ny;
-          nrm[v * 3 + 2] = 0;
+          nrm[v * 3 + 2] = nz;
           v++;
         }
       }

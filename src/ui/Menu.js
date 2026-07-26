@@ -170,7 +170,10 @@ export class Menu {
         (v) => this._set('sensitivity', v), (v) => v.toFixed(2)),
       this._slider('ADS multiplier', 0.2, 1.4, 0.02, Settings.data.adsMultiplier,
         (v) => this._set('adsMultiplier', v), (v) => v.toFixed(2)),
-      this._toggle('Invert vertical', Settings.data.invertY, (v) => this._set('invertY', v))
+      this._toggle('Invert vertical', Settings.data.invertY, (v) => this._set('invertY', v)),
+      this._toggle('Fullscreen on deploy', Settings.data.fullscreenOnPlay !== false,
+        (v) => this._set('fullscreenOnPlay', v),
+        'Lets the game keep Ctrl+W and Ctrl+T. Off means crouch-walking forward closes the tab.')
     ]));
 
     body.appendChild(this._group('Audio', [
@@ -269,8 +272,14 @@ export class Menu {
     return row;
   }
 
-  _toggle(label, value, onChange) {
+  _toggle(label, value, onChange, hint = '') {
     const { row, control } = this._row(label);
+    if (hint) {
+      const h = document.createElement('span');
+      h.className = 'setting-hint';
+      h.textContent = hint;
+      row.querySelector('label').appendChild(h);
+    }
     const t = document.createElement('div');
     t.className = `toggle${value ? ' on' : ''}`;
     t.addEventListener('click', () => {

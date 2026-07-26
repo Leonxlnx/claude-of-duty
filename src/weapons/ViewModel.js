@@ -21,6 +21,7 @@ import { RETICLE_FRAG, RETICLE_VERT, GLASS_FRAG } from '../render/shaders/optic.
  * forward until the whole silhouette clears the near plane.
  */
 const VM_SCALE = 0.86;
+const TAU = Math.PI * 2;
 const STOCK_BACK = 0.375 * VM_SCALE;   // buttplate, behind the receiver origin
 const SIGHT_UP = WEAPON_ANCHORS.sightAxisOffsetY * VM_SCALE;
 
@@ -125,7 +126,9 @@ export class ViewModel {
     // shader solves for the angle between the eye ray and the sight axis, so
     // the dot stays parked on target however the head moves. A real collimator.
     const win = WEAPON_ANCHORS.sightWindow;
-    const geo = new THREE.PlaneGeometry(0.0295, 0.0295);
+    // Sized to clear the inside of the housing tube; any larger and the lens
+    // pokes through the side walls.
+    const geo = new THREE.PlaneGeometry(0.0265, 0.0265);
 
     this.reticleMaterial = new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3,
@@ -260,11 +263,12 @@ export class ViewModel {
     const speed = THREE.MathUtils.clamp(player.speed2D / 4.25, 0, 1.6);
     const grounded = player.controller.grounded;
     const bobRate = player.sprinting ? 10.4 : player.crouched ? 6.2 : 8.4;
-    if (grounded) this.bobPhase += dt * bobRate * Math.min(speed, 1.4);
+    if (grounded) this.bobPhase = (this.bobPhase + dt * bobRate * Math.min(speed, 1.4)) % TAU;
     const bobAmt = (grounded ? speed : 0) * (1 - this.adsBlend * 0.82) * Settings.data.cameraShake;
 
     const bobX = Math.sin(this.bobPhase) * 0.0155 * bobAmt;
-    const bobY = (Math.abs(Math.sin(this.bobPhase * 2 + 0.4)) - 0.5) * 0.0135 * bobAmt;
+    // Matches the eye rig: a plain cosine at twice stride rate, no corners.
+    const bobY = Math.cos(this.bobPhase * 2) * -0.0068 * bobAmt;
     const bobRoll = Math.sin(this.bobPhase + 0.6) * 0.030 * bobAmt;
     const bobPitch = Math.sin(this.bobPhase * 2) * 0.018 * bobAmt;
 

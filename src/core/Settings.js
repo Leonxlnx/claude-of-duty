@@ -39,6 +39,9 @@ const DEFAULTS = {
   cameraShake: 0.85,
   showFps: true,
   difficulty: 'regular',
+  // Crouch is Ctrl, and only a fullscreen tab can take Ctrl+W back off the
+  // browser. Turn this off and crouch-walking forward will close the tab.
+  fullscreenOnPlay: true,
   keybinds: {
     fire: 'Mouse0', aim: 'Mouse2',
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',

@@ -14,7 +14,7 @@ import { LAYER } from '../world/MaterialLibrary.js';
 // black furniture, so flat dark earth needs to lift it a long way rather than
 // just warm it. An all-black carbine against a shaded street is a silhouette.
 const GUNMETAL = [1, 1, 1];
-const FDE = [1.86, 1.58, 1.18];
+const FDE = [1.42, 1.21, 0.90];
 const BLACK_POLY = [1, 1, 1];
 
 // --- geometry landmarks other systems need
@@ -247,12 +247,22 @@ export function buildCarbine(b, opts = {}) {
   b.addBox(0, 0.054, -0.055, 0.030, 0.018, 0.052, { ...metal, tint: [0.9, 0.9, 0.9] });
   b.addBox(0.017, 0.050, -0.055, 0.008, 0.014, 0.048, { ...metal, tint: [0.7, 0.7, 0.7] });
   b.addCylinderBetween(V(0.021, 0.050, -0.070), V(0.021, 0.050, -0.040), 0.0055, 0.0055, 8, metal);
-  // housing: squared tube with a protective hood
-  bevelBox(b, 0, 0.0855, -0.055, 0.0345, 0.040, 0.060, { ...metal, bevel: 0.2, tint: [0.85, 0.85, 0.85] });
-  b.addBox(0, 0.104, -0.055, 0.0365, 0.006, 0.064, { ...metal, tint: [0.75, 0.75, 0.75] });
-  // windows: front and rear apertures left hollow, filled by the glass mesh
-  b.addBox(0, 0.0855, -0.0855, 0.0345, 0.040, 0.005, { ...metal, tint: [0.8, 0.8, 0.8] });
-  b.addBox(0, 0.0855, -0.0245, 0.0345, 0.040, 0.005, { ...metal, tint: [0.8, 0.8, 0.8] });
+  // Housing: four walls around an open bore, not a solid block. The window has
+  // to be genuinely empty — anything spanning it, including a thin bezel plate,
+  // is the one thing the player is looking through when they aim.
+  {
+    const cy = 0.0855, cz = -0.055;      // on the optical axis
+    const hw = 0.01725, hh = 0.020;      // outer half extents
+    const t = 0.0038;                    // wall thickness
+    const len = 0.060;
+    const shell = { ...metal, tint: [0.85, 0.85, 0.85] };
+    b.addBox(0, cy + hh - t * 0.5, cz, hw * 2, t, len, shell);          // top
+    b.addBox(0, cy - hh + t * 0.5, cz, hw * 2, t, len, shell);          // bottom
+    b.addBox(-hw + t * 0.5, cy, cz, t, (hh - t) * 2, len, shell);       // left
+    b.addBox(hw - t * 0.5, cy, cz, t, (hh - t) * 2, len, shell);        // right
+    // hood over the objective, clear of the top wall
+    b.addBox(0, cy + hh + 0.004, cz - 0.008, 0.0365, 0.005, 0.050, { ...metal, tint: [0.75, 0.75, 0.75] });
+  }
   // brightness knob + battery cap
   b.addCylinderBetween(V(-0.019, 0.0855, -0.062), V(-0.027, 0.0855, -0.062), 0.0085, 0.0085, 10, {
     ...metal, tint: [0.7, 0.7, 0.7]

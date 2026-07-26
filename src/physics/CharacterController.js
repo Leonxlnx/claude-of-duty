@@ -149,7 +149,11 @@ export class CharacterController {
       }
     }
     if (hitAny && bestT < probeLen + 0.03) {
-      if (snap && bestT > 0.001 && this.velocity.y <= 0.5) pos.y -= Math.min(bestT, probeLen);
+      if (snap && bestT > 0.001 && this.velocity.y <= 0.5) {
+        const drop = Math.min(bestT, probeLen);
+        pos.y -= drop;
+        this.stepCorrection -= drop;
+      }
       return true;
     }
     return false;
@@ -191,6 +195,10 @@ export class CharacterController {
     const wasGrounded = this.grounded;
     const fallSpeed = -this.velocity.y;
     this.landingImpact = 0;
+    // Vertical teleports applied this step — stairs and ground snapping. The
+    // body has to move instantly to stay on the surface, but the eye must not,
+    // so the total is published for the view rig to absorb and decay.
+    this.stepCorrection = 0;
 
     const total = displacement.length();
     const maxStep = this.radius * 0.35;
@@ -225,6 +233,7 @@ export class CharacterController {
             if (h.hit && h.normal.y >= this.slopeLimitCos) {
               const landY = h.point.y;
               if (landY > _prevPos.y + 0.01 && landY < _prevPos.y + this.stepOffset + 0.01) {
+                this.stepCorrection += landY - this.position.y;
                 this.position.set(_probe.x, landY, _probe.z);
                 this._gather(this.position.x, this.position.y, this.position.z, 0.08);
                 this._depenetrate(this.position, true);

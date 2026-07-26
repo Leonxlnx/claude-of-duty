@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FullscreenPass } from '../render/FullscreenPass.js';
+import { FullscreenPass, fullscreenCamera } from '../render/FullscreenPass.js';
 import { GLSL_NOISE } from '../render/shaders/noise.glsl.js';
 import { SURFACE } from '../physics/BVH.js';
 
@@ -48,9 +48,17 @@ export const LAYER_SURFACE = [
 const GEN_FRAG = /* glsl */`
 ${GLSL_NOISE}
 
-uniform int uLayer;
-uniform int uOutput;   // 0 albedo, 1 normal, 2 orm
+// Specialised per layer at build time. Keeping the layer as a uniform means one
+// program has to contain all twenty materials, and an inlined twenty-way branch
+// over this much noise is enough to hang a driver shader compiler for minutes.
+#ifndef GEN_LAYER
+#define GEN_LAYER 0
+#endif
+const int uLayer = GEN_LAYER;
+
+uniform int uOutput;   // 0 albedo, 1 normal, 2 orm, 3 height
 uniform float uPeriod;
+uniform sampler2D uHeight;
 in vec2 vUv;
 layout(location = 0) out vec4 outColor;
 
@@ -453,7 +461,17 @@ vec3 ormFn(vec2 uv, int layer, float h){
 void main(){
   vec2 uv = vUv;
   float texel = 1.0/${'${TEX_SIZE}'}.0;
-  float h = heightFn(uv, uLayer);
+
+  // Height goes to a scratch buffer first and everything else reads it back.
+  // Deriving the normal by re-evaluating heightFn at four neighbours inlines
+  // the most expensive function in the file five times over, which costs both
+  // shader size and five times the work per texel.
+  if(uOutput == 3){
+    outColor = vec4(heightFn(uv, uLayer), 0.0, 0.0, 1.0);
+    return;
+  }
+
+  float h = texture(uHeight, uv).r;
 
   if(uOutput == 0){
     // Albedo swatches above are authored the way a colour picker reads them,
@@ -464,10 +482,11 @@ void main(){
   } else if(uOutput == 1){
     // Central differences: a forward difference biases the relief a half texel
     // toward the light and makes fine grain look like it is lit from one side.
-    float hx0 = heightFn(uv - vec2(texel,0.0), uLayer);
-    float hx1 = heightFn(uv + vec2(texel,0.0), uLayer);
-    float hy0 = heightFn(uv - vec2(0.0,texel), uLayer);
-    float hy1 = heightFn(uv + vec2(0.0,texel), uLayer);
+    // The height buffer wraps, so the tile stays seamless across the edge.
+    float hx0 = texture(uHeight, uv - vec2(texel,0.0)).r;
+    float hx1 = texture(uHeight, uv + vec2(texel,0.0)).r;
+    float hy0 = texture(uHeight, uv - vec2(0.0,texel)).r;
+    float hy1 = texture(uHeight, uv + vec2(0.0,texel)).r;
     // Scaled by texel count so the relief keeps the same slope if the atlas
     // resolution changes; the 0.5 accounts for the two-texel central span.
     float strength = 6.0 * 0.5 * 0.0025 / texel;
@@ -488,7 +507,21 @@ export class MaterialLibrary {
     this.orm = null;
   }
 
-  generate() {
+  /**
+   * Allocate the texture arrays and hand every layer program to the driver.
+   *
+   * One program is built per layer rather than one program branching over all
+   * twenty. A single shader holding every material inlines this much noise into
+   * a branch chain that AMD's D3D11 compiler spends minutes on and then runs at
+   * a fraction of the throughput, because worst-case register pressure across
+   * all the branches collapses occupancy. Twenty small programs compile and run
+   * in a fraction of the time.
+   *
+   * Compilation is split from drawing so the caller can start it, go and build
+   * the map on the CPU, and come back. The driver compiles on its own threads,
+   * so that time is otherwise spent waiting on an idle main thread.
+   */
+  async compile() {
     const { renderer, size } = this;
     const opts = {
       format: THREE.RGBAFormat,
@@ -514,29 +547,75 @@ export class MaterialLibrary {
       rt.texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
     }
 
-    const pass = new FullscreenPass(GEN_FRAG.replace('${TEX_SIZE}', String(size)), {
-      uLayer: { value: 0 },
-      uOutput: { value: 0 },
-      uPeriod: { value: 1.0 }
+    // Published as soon as they exist, not once they are painted. The material
+    // factory is built while these are still blank so that map generation can
+    // overlap the compile, and it captures whatever these are at that moment.
+    this.albedo = this._albedoRT.texture;
+    this.normal = this._normalRT.texture;
+    this.orm = this._ormRT.texture;
+
+    // Scratch height buffer, reused by every layer. Repeat wrapping keeps the
+    // normal's neighbour taps seamless across the tile edge.
+    this._heightRT = new THREE.WebGLRenderTarget(size, size, {
+      format: THREE.RedFormat,
+      type: THREE.FloatType,
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      wrapS: THREE.RepeatWrapping,
+      wrapT: THREE.RepeatWrapping,
+      generateMipmaps: false,
+      depthBuffer: false,
+      stencilBuffer: false
     });
 
+    const source = GEN_FRAG.replace('${TEX_SIZE}', String(size));
+
+    this._passes = [];
+    for (let layer = 0; layer < LAYER_COUNT; layer++) {
+      this._passes.push(new FullscreenPass(source, {
+        uOutput: { value: 3 },
+        uPeriod: { value: 1.0 },
+        uHeight: { value: null }
+      }, { GEN_LAYER: layer }));
+    }
+
+    // Where KHR_parallel_shader_compile exists the twenty compiles overlap on
+    // the driver's worker threads instead of stalling the GL thread one at a
+    // time.
+    const tCompile = performance.now();
+    await Promise.all(this._passes.map((p) => renderer.compileAsync(p.scene, fullscreenCamera)));
+    this.compileMs = Math.round(performance.now() - tCompile);
+    return this;
+  }
+
+  /**
+   * Draw every layer into the arrays. `onProgress` is awaited between layers,
+   * which is also the only chance the browser gets to paint the loading bar.
+   */
+  async draw(onProgress) {
+    const { renderer } = this;
     const targets = [this._albedoRT, this._normalRT, this._ormRT];
     const prevTarget = renderer.getRenderTarget();
+    const tDraw = performance.now();
+
     for (let layer = 0; layer < LAYER_COUNT; layer++) {
-      pass.uniforms.uLayer.value = layer;
+      const pass = this._passes[layer];
+      pass.render(renderer, this._heightRT);
+      pass.uniforms.uHeight.value = this._heightRT.texture;
       for (let o = 0; o < 3; o++) {
         pass.uniforms.uOutput.value = o;
         pass.render(renderer, targets[o], layer);
       }
+      pass.dispose();
+      if (onProgress) await onProgress((layer + 1) / LAYER_COUNT);
     }
+    this._passes = null;
+    this.drawMs = Math.round(performance.now() - tDraw);
     renderer.setRenderTarget(prevTarget);
-    pass.dispose();
+    this._heightRT.dispose();
+    this._heightRT = null;
 
     this._forceMipmaps(targets);
-
-    this.albedo = this._albedoRT.texture;
-    this.normal = this._normalRT.texture;
-    this.orm = this._ormRT.texture;
     return this;
   }
 

@@ -311,7 +311,13 @@ html, body {
 #respawn.show { display: flex; }
 #respawn .killed-by { font-size: 12px; letter-spacing: 0.26em; color: var(--ink-dim); text-transform: uppercase; }
 #respawn .name { font-size: 30px; font-weight: 600; margin-top: 10px; }
-#respawn .timer { font-size: 15px; color: var(--ink-dim); margin-top: 26px; font-variant-numeric: tabular-nums; }
+#respawn .timer {
+  font-size: 15px; color: var(--ink-dim); margin-top: 26px;
+  font-family: var(--mono); letter-spacing: 0.14em;
+  font-variant-numeric: tabular-nums;
+}
+#respawn .timer.ready { color: var(--ink); animation: respawn-ready 1.5s ease-in-out infinite; }
+@keyframes respawn-ready { 0%, 100% { opacity: 0.62; } 50% { opacity: 1; } }
 
 /* --- damage numbers floating off hits */
 .dmg-num {
@@ -466,6 +472,11 @@ html, body {
   font-size: 13px;
 }
 .setting label { color: var(--ink-dim); }
+.setting-hint {
+  display: block; margin-top: 3px; max-width: 46ch;
+  font-family: var(--mono); font-size: 10.5px; line-height: 1.5;
+  color: var(--ink-faint);
+}
 .setting .control { display: flex; align-items: center; gap: 10px; }
 .setting .readout {
   font-family: var(--mono); font-size: 11px; color: var(--ink);
@@ -609,6 +620,26 @@ input[type="range"]::-moz-range-thumb {
   font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em;
   color: var(--ink-faint); margin-top: 14px; text-transform: uppercase;
   min-height: 14px;
+}
+
+/* --- fatal stop screen */
+#fatal {
+  position: absolute; inset: 0; z-index: 60;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 14px; padding: 40px; text-align: center;
+  background: #0b0c0e;
+}
+#fatal .fatal-title {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.3em;
+  color: var(--danger, #e8613c); text-transform: uppercase;
+}
+#fatal .fatal-detail {
+  font-size: 14px; max-width: 560px; line-height: 1.7; color: var(--ink, #e8e4dc);
+}
+#fatal .fatal-hint {
+  font-family: var(--mono); font-size: 11px; color: var(--ink-faint, #5d5a55);
+  max-width: 520px; line-height: 1.6;
 }
 
 /* --- perf readout */

@@ -421,7 +421,7 @@ void main(){
    * soft fill from over the player's shoulder. Both scale with the sky, so the
    * rig tracks the scene instead of looking pasted on.
    */
-  float shadowFloor = uViewmodelLight * 0.42;
+  float shadowFloor = uViewmodelLight * 0.55;
   SurfaceOut s = shadeSurface(vWorldPos, N, V, albedo, rough, metal, ao, viewDepth, 1.0, shadowFloor);
 
   vec3 direct = s.direct;
@@ -429,7 +429,11 @@ void main(){
 
   if(uViewmodelLight > 0.0){
     float fill = max(dot(N, normalize(V + vec3(0.0, 0.55, 0.0))), 0.0);
-    ambient += albedo * shIrradiance(vec3(0.0, 1.0, 0.0)) * (0.30 * uViewmodelLight * fill);
+    // A wrap term keeps faces turned fully away from the eye off the floor of
+    // the tone curve; a receiver that reads as a black cut-out is worse than a
+    // slightly flat one.
+    float wrap = 0.35 + 0.65 * fill;
+    ambient += albedo * shIrradiance(vec3(0.0, 1.0, 0.0)) * (0.48 * uViewmodelLight * wrap);
   }
 
   // aerial perspective is applied to the combined result later; split it here
