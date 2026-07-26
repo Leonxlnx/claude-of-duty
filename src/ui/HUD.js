@@ -34,6 +34,10 @@ export class HUD {
       chipSprint: q('#chip-sprint'),
       chipAds: q('#chip-ads'),
       chipPeek: q('#chip-peek'),
+      grenades: q('#grenades'),
+      grenadePips: q('#grenades .pips'),
+      throwPower: q('#throw-power'),
+      throwFill: q('#throw-power .fill'),
       scoreA: q('#score-a'),
       scoreB: q('#score-b'),
       clock: q('#clock'),
@@ -58,7 +62,8 @@ export class HUD {
     this._cache = {
       rounds: -1, reserve: -1, mode: '', health: -1,
       scoreA: -1, scoreB: -1, clock: '', spread: -1,
-      crouch: null, sprint: null, ads: null, reload: null
+      crouch: null, sprint: null, ads: null, reload: null, peek: null,
+      grenadeCount: -1, grenadeReady: null, grenadeCharging: null
     };
     this.killEntries = [];
     this.damageArrows = [];
@@ -156,6 +161,27 @@ export class HUD {
     this.dom.criticalPulse.classList.toggle('active', frac < 0.28 && rounded > 0);
   }
 
+  /**
+   * Grenade count, and the throw power meter while one is being cooked. The
+   * meter only exists during a charge — a permanent empty bar is one more thing
+   * to read past when nothing is happening.
+   */
+  updateGrenades({ count, equipped, charging, charge }) {
+    if (count !== this._cache.grenadeCount) {
+      this._cache.grenadeCount = count;
+      this.dom.grenadePips.textContent = count > 0 ? '\u25CF '.repeat(count).trim() : '\u25CB';
+    }
+    if (equipped !== this._cache.grenadeReady) {
+      this._cache.grenadeReady = equipped;
+      this.dom.grenades.classList.toggle('ready', equipped);
+    }
+    if (charging !== this._cache.grenadeCharging) {
+      this._cache.grenadeCharging = charging;
+      this.dom.throwPower.classList.toggle('active', charging);
+    }
+    if (charging) this.dom.throwFill.style.width = `${charge * 100}%`;
+  }
+
   updateStance(crouch, sprint, ads, peek = false) {
     if (peek !== this._cache.peek) {
       this._cache.peek = peek;
@@ -184,7 +210,7 @@ export class HUD {
     if (clock !== this._cache.clock) { this._cache.clock = clock; this.dom.clock.textContent = clock; }
     if (target !== undefined && this._cache.target !== target) {
       this._cache.target = target;
-      this.el.querySelector('#score-target').textContent = `FIRST TO ${target}`;
+      this.el.querySelector('#score-target').textContent = `TARGET ${target}`;
     }
   }
 
@@ -351,16 +377,18 @@ const TEMPLATE = /* html */`
 
 <div id="score-strip">
   <div>
-    <div class="team a" id="score-a">0</div>
+    <div class="tally" id="score-a">0</div>
+    <div class="tally-label">Eliminated</div>
   </div>
   <div class="divider"></div>
   <div>
     <div class="clock" id="clock">10:00</div>
-    <div class="target" id="score-target">FIRST TO 50</div>
+    <div class="target" id="score-target">TARGET 30</div>
   </div>
   <div class="divider"></div>
   <div>
-    <div class="team b" id="score-b">0</div>
+    <div class="tally down" id="score-b">0</div>
+    <div class="tally-label">Losses</div>
   </div>
 </div>
 
@@ -385,7 +413,10 @@ const TEMPLATE = /* html */`
   <div class="rounds">30</div>
   <div class="reserve">/ 210</div>
   <div class="weapon">MK18 CARBINE <span class="mode">AUTO</span></div>
+  <div id="grenades"><span class="pips"></span><span class="key">[B]</span></div>
 </div>
+
+<div id="throw-power"><div class="fill"></div></div>
 <div id="reload-hint">RELOAD [R]</div>
 
 <div id="respawn">

@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { GeometryBuilder } from '../world/GeometryBuilder.js';
-import { buildCarbine, buildHands, buildBoltCarrier, buildChargingHandle, buildMagazine, WEAPON_ANCHORS } from './WeaponGeometry.js';
+import {
+  buildCarbine, buildHands, buildBoltCarrier, buildChargingHandle, buildMagazine,
+  buildGrenadeHand, WEAPON_ANCHORS
+} from './WeaponGeometry.js';
 import { Spring, Spring3, damp } from '../core/Spring.js';
 import { Settings } from '../core/Settings.js';
 import { RETICLE_FRAG, RETICLE_VERT, GLASS_FRAG } from '../render/shaders/optic.glsl.js';
@@ -37,7 +40,21 @@ const POSE = {
   ads:    { p: [0.000, -SIGHT_UP, -0.400], r: [0.000, 0.000, 0.000] },
   sprint: { p: [0.146, -0.186, -0.430], r: [0.320, -0.520, 0.460] },
   low:    { p: [0.126, -0.226, -0.470], r: [0.620, -0.180, 0.130] },
-  crouch: { p: [0.098, -0.106, -0.530], r: [0.010, -0.050, 0.028] }
+  crouch: { p: [0.098, -0.106, -0.530], r: [0.010, -0.050, 0.028] },
+  // Rifle dropped to the hip while the other hand has a grenade in it.
+  stow:   { p: [0.150, -0.330, -0.430], r: [0.880, -0.300, 0.220] }
+};
+
+/**
+ * The grenade arm, as positions and rotations of the hand in eye space. It
+ * comes up from under the frame, winds back as the throw charges, and whips
+ * through `release` on the way out.
+ */
+const GRENADE_POSE = {
+  down:    { p: [0.300, -0.520, -0.360], r: [0.90, -0.30, 0.10] },
+  ready:   { p: [0.235, -0.180, -0.395], r: [0.16, -0.34, 0.05] },
+  wound:   { p: [0.315, -0.120, -0.250], r: [-0.30, -0.60, 0.28] },
+  release: { p: [0.055, 0.055, -0.620], r: [-0.55, 0.10, -0.22] }
 };
 
 export class ViewModel {
@@ -83,7 +100,17 @@ export class ViewModel {
     this.spareMag.visible = false;
     this.spareMag.frustumCulled = false;
 
-    this._velocityMeshes = [this.bodyMesh, this.chargingHandle, this.bolt, this.spareMag];
+    // ---- grenade in the off hand, its own group so it can swing independently
+    const grenGeo = new GeometryBuilder(null, 'vm-grenade');
+    buildGrenadeHand(grenGeo);
+    this.grenadeMesh = new THREE.Mesh(grenGeo.build(), vmMaterial('vm-grenade'));
+    this.grenadeMesh.frustumCulled = false;
+    this.grenadeMesh.visible = false;
+    this.grenadeArm = new THREE.Group();
+    this.grenadeArm.add(this.grenadeMesh);
+    this.root.add(this.grenadeArm);
+
+    this._velocityMeshes = [this.bodyMesh, this.chargingHandle, this.bolt, this.spareMag, this.grenadeMesh];
     this._prevWorld = this._velocityMeshes.map(() => new THREE.Matrix4());
     this._historyValid = false;
 
@@ -106,6 +133,7 @@ export class ViewModel {
     this.adsBlend = 0;
     this.lowerBlend = 0;
     this.sprintBlend = 0;
+    this.grenadeBlend = 0;
     this.bobPhase = 0;
     this.time = 0;
 
@@ -205,15 +233,65 @@ export class ViewModel {
 
   get busy() { return this.action !== null; }
 
+  /**
+   * Place the grenade arm for this frame.
+   *
+   * Three blends stacked in order: how far it has come up, how far the throw is
+   * charged, and how far through the throw it is. The throw curve is eased so
+   * the wind-up is unhurried and the release is not — a linear swing looks like
+   * the arm is being dragged rather than swung.
+   */
+  _poseGrenadeArm(grenade, bobX, bobY, leanX) {
+    const raise = grenade ? grenade.raiseBlend : 0;
+    this.grenadeMesh.visible = raise > 0.001;
+    if (!this.grenadeMesh.visible) return;
+
+    const set = (v, key, which) => v.set(
+      GRENADE_POSE[key][which][0], GRENADE_POSE[key][which][1], GRENADE_POSE[key][which][2]
+    );
+
+    set(_p, 'down', 'p'); set(_r, 'down', 'r');
+    set(_p2, 'ready', 'p'); set(_r2, 'ready', 'r');
+    _p.lerp(_p2, raise);
+    _r.lerp(_r2, raise);
+
+    const charge = grenade.charge;
+    if (charge > 0) {
+      set(_p2, 'wound', 'p'); set(_r2, 'wound', 'r');
+      _p.lerp(_p2, charge);
+      _r.lerp(_r2, charge);
+    }
+
+    const t = grenade.throwBlend;
+    if (t > 0) {
+      // Fast out of the wind-up, then settling back — the arm overshoots and
+      // returns rather than stopping dead at full extension.
+      const swing = Math.sin(Math.min(1, t * 1.9) * Math.PI * 0.5) * (1 - Math.max(0, t - 0.55) / 0.45);
+      set(_p2, 'release', 'p'); set(_r2, 'release', 'r');
+      _p.lerp(_p2, swing);
+      _r.lerp(_r2, swing);
+    }
+
+    this.grenadeArm.position.copy(_p);
+    this.grenadeArm.position.x += this.swaySpring.value.x * 0.7 + bobX * 1.3 + leanX;
+    this.grenadeArm.position.y += this.swaySpring.value.y * 0.7 + bobY * 1.3;
+    _euler.set(_r.x, _r.y, _r.z, 'YXZ');
+    this.grenadeArm.quaternion.setFromEuler(_euler);
+  }
+
   update(dt, ctx) {
     this.time += dt;
     const {
-      camera, player, weapon, lookDelta, wallProximity
+      camera, player, weapon, lookDelta, wallProximity, grenade
     } = ctx;
 
     // ---------------------------------------------------------- pose blend
     this.adsBlend = player.adsBlend;
-    this.sprintBlend = damp(this.sprintBlend, player.sprinting ? 1 : 0, 12, dt);
+    // Speed-derived, like the gait: the sprint flag drops for single frames
+    // over rough ground and the weapon would jerk back up each time. Aiming
+    // still wins outright, since the sprint pose is applied after the ADS one.
+    const sprintPose = player.sprintNorm * (1 - player.adsBlend);
+    this.sprintBlend = damp(this.sprintBlend, sprintPose, 12, dt);
     this.lowerBlend = damp(this.lowerBlend, wallProximity, 16, dt);
 
     const base = player.crouched ? POSE.crouch : POSE.hip;
@@ -234,6 +312,14 @@ export class ViewModel {
     _r2.set(POSE.low.r[0], POSE.low.r[1], POSE.low.r[2]);
     _p.lerp(_p2, this.lowerBlend);
     _r.lerp(_r2, this.lowerBlend);
+
+    // A grenade in the other hand drops the rifle to the hip; it is applied
+    // last so it wins over every other pose.
+    this.grenadeBlend = grenade ? grenade.raiseBlend : 0;
+    _p2.set(POSE.stow.p[0], POSE.stow.p[1], POSE.stow.p[2]);
+    _r2.set(POSE.stow.r[0], POSE.stow.r[1], POSE.stow.r[2]);
+    _p.lerp(_p2, this.grenadeBlend);
+    _r.lerp(_r2, this.grenadeBlend);
 
     // scripted actions displace the target pose rather than replacing it
     if (this.action) {
@@ -260,11 +346,16 @@ export class ViewModel {
     this.swaySpring.update(dt);
 
     // ------------------------------------------------------------ movement
+    // Same gait the eye rig uses, blended rather than stepped, so the weapon
+    // and the head never disagree about where in the stride they are.
     const speed = player.speedNorm;
-    const grounded = player.controller.grounded;
-    const bobRate = player.sprinting ? 10.4 : player.crouched ? 6.2 : 8.4;
-    if (grounded) this.bobPhase = (this.bobPhase + dt * bobRate * Math.min(speed, 1.4)) % TAU;
-    const bobAmt = (grounded ? speed : 0) * (1 - this.adsBlend * 0.82) * Settings.data.cameraShake;
+    const settled = 1 - THREE.MathUtils.clamp(player.airborneFor / 0.15, 0, 1);
+    const bobRate = THREE.MathUtils.lerp(
+      THREE.MathUtils.lerp(8.4, 6.2, player.stanceBlend), 10.4, player.sprintNorm
+    );
+    if (settled > 0) this.bobPhase = (this.bobPhase + dt * bobRate * Math.min(speed, 1.4)) % TAU;
+    const bobAmt = player.bobStrength * settled
+      * (1 - this.adsBlend * 0.82) * Settings.data.cameraShake;
 
     const bobX = Math.sin(this.bobPhase) * 0.0155 * bobAmt;
     // Matches the eye rig: a plain cosine at twice stride rate, no corners.
@@ -278,8 +369,9 @@ export class ViewModel {
     const breathY = Math.sin(this.time * 1.35 + 0.7) * 0.0026 * idle;
     const breathRot = Math.sin(this.time * 0.72 + 1.9) * 0.008 * idle;
 
-    // vertical velocity throws the weapon on jumps and landings
-    const airY = THREE.MathUtils.clamp(-player.velocity.y * 0.0045, -0.03, 0.03) * (grounded ? 0 : 1);
+    // Vertical velocity throws the weapon on jumps and landings. Faded in with
+    // the same airborne ramp the bob uses, so a kerb does not snap it.
+    const airY = THREE.MathUtils.clamp(-player.velocity.y * 0.0045, -0.03, 0.03) * (1 - settled);
 
     // The weapon lives in camera space, so the camera's lean roll does not tip
     // it on screen — the world rotates around a weapon that stays put. A little
@@ -308,6 +400,8 @@ export class ViewModel {
       'YXZ'
     );
     this.weapon.quaternion.setFromEuler(_euler);
+
+    this._poseGrenadeArm(grenade, bobX, bobY, leanX);
 
     // ------------------------------------------------------- moving parts
     this.boltSpring.target = weapon?.boltLocked ? 1 : 0;

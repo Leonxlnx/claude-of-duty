@@ -55,14 +55,16 @@ test.describe('boot and menu', () => {
 });
 
 test.describe('match lifecycle', () => {
-  test('deploys both teams and runs the clock', async ({ page }) => {
+  test('deploys the opposition and runs the clock', async ({ page }) => {
     const session = await boot(page, '?auto=1');
     await settle(page, 1500);
 
     const a = await snapshot(page);
     expect(a.state).toBe('playing');
     expect(a.player.alive).toBe(true);
-    expect(a.ai.aliveA + a.ai.aliveB).toBeGreaterThanOrEqual(6);
+    // One side only — the player has no squad, so every agent is hostile.
+    expect(a.ai.aliveA).toBe(0);
+    expect(a.ai.aliveB).toBeGreaterThanOrEqual(5);
     expect(a.weapon.ammo).toBe(30);
 
     await settle(page, 2500);
@@ -87,5 +89,58 @@ test.describe('match lifecycle', () => {
     await page.evaluate(() => window.__harness.resume());
     await settle(page, 800);
     expect((await snapshot(page)).state).toBe('playing');
+  });
+
+  /**
+   * Every control, once, watching for exceptions.
+   *
+   * A throw inside the render callback aborts the frame silently: the canvas
+   * keeps showing whatever was last drawn, so a dozen unrelated assertions
+   * about brightness and shadows fail instead, and none of them mention the
+   * actual fault. One undefined variable on a branch only a sprint reaches
+   * cost an afternoon of chasing exposure numbers. This walks the states that
+   * have their own code paths so the next one fails here, by name.
+   */
+  test('no state throws, and the frame keeps advancing', async ({ page }) => {
+    const session = await boot(page, '?auto=1');
+    await settle(page, 1200);
+
+    const drawn = await page.evaluate(async () => {
+      const h = window.__harness, g = window.__game;
+      const wait = (s) => h.wait(s);
+      const hold = async (keys, s) => {
+        for (const k of keys) h.key(k, true);
+        await wait(s);
+        h.releaseAll();
+      };
+
+      await hold(['KeyW'], 0.35);
+      await hold(['KeyW', 'ShiftLeft'], 0.7);        // sprint
+      await hold(['KeyW', 'ShiftLeft', 'KeyC'], 0.6); // slide out of a sprint
+      await hold(['Space'], 0.5);                    // airborne
+      await hold(['ControlLeft', 'KeyW'], 0.35);     // crouch-walk
+      await hold(['KeyQ'], 0.3);                     // peek
+
+      h.fire(true); await wait(0.3); h.fire(false);
+      h.ads(true); await wait(0.4);
+      h.fire(true); await wait(0.2); h.fire(false);
+      h.ads(false);
+      await h.tap('KeyR'); await wait(0.6);   // reload
+      await h.tap('KeyF'); await wait(0.4);   // inspect
+      await h.tap('KeyV');                    // fire selector
+
+      await h.tap('KeyB'); await wait(0.5);   // grenade out
+      h.fire(true); await wait(0.7); h.fire(false);
+      await wait(1.4);                        // throw, rifle back, detonation
+
+      // Counts actual draw calls, so it stalls if the render callback throws
+      // even though the fixed-step simulation carries on regardless.
+      const before = g.renderer.info.render.frame;
+      await wait(0.5);
+      return { drew: g.renderer.info.render.frame - before, alive: g.player.alive };
+    });
+
+    expect(drawn.drew).toBeGreaterThan(5);
+    session.assertClean();
   });
 });

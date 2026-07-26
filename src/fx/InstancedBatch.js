@@ -172,6 +172,17 @@ export function magazineGeometry() {
   return g;
 }
 
+/** Fragmentation body with a spoon down one side, at roughly life size. */
+export function grenadeGeometry() {
+  const body = new THREE.SphereGeometry(0.031, 12, 9);
+  body.scale(1, 1.28, 1);
+  const fuse = new THREE.CylinderGeometry(0.010, 0.012, 0.018, 8);
+  fuse.translate(0, 0.043, 0);
+  const spoon = new THREE.BoxGeometry(0.008, 0.052, 0.004);
+  spoon.translate(0.026, 0.026, 0);
+  return mergeSimple([body, fuse, spoon]);
+}
+
 /** Minimal geometry merge — enough for the two-part shapes above. */
 function mergeSimple(geos) {
   let vCount = 0, iCount = 0;

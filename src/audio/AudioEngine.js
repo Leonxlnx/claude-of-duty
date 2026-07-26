@@ -168,6 +168,8 @@ export class AudioEngine {
       ['shotDistant', 0.9, (ctx) => this._buildDistantShot(ctx)],
       ['tail', 1.5, (ctx) => this._buildTail(ctx)],
       ['supersonic', 0.16, (ctx) => this._buildCrack(ctx)],
+      ['explosion', 2.0, (ctx) => this._buildExplosion(ctx)],
+      ['grenadePin', 0.2, (ctx) => this._buildPin(ctx)],
       ['casing', 0.55, (ctx) => this._buildCasing(ctx)],
       ['magOut', 0.35, (ctx) => this._buildMagOut(ctx)],
       ['magIn', 0.4, (ctx) => this._buildMagIn(ctx)],
@@ -328,6 +330,53 @@ export class AudioEngine {
     bp.Q.value = 0.5;
     const env = this._env(ctx, bp, 0.03, 0.34, 0.05, 1.25);
     n.connect(bp); env.connect(out); n.start(0);
+  }
+
+  /**
+   * Grenade. A low pressure thump under a wide noise burst, then a long tail
+   * of debris and reflections — the tail is most of what sells the size.
+   */
+  _buildExplosion(ctx) {
+    const out = ctx.destination;
+
+    const thump = ctx.createOscillator();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(120, 0);
+    thump.frequency.exponentialRampToValueAtTime(28, 0.42);
+    this._env(ctx, thump, 0, 1.0, 0.002, 0.55).connect(out);
+    thump.start(0); thump.stop(0.7);
+
+    const blast = this._noise(ctx, 0.9, -0.2);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(4200, 0);
+    lp.frequency.exponentialRampToValueAtTime(380, 0.6);
+    blast.connect(lp);
+    this._env(ctx, lp, 0.001, 0.85, 0.006, 0.65).connect(out);
+    blast.start(0);
+
+    const tail = this._noise(ctx, 1.8, -0.5);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(520, 0);
+    bp.frequency.exponentialRampToValueAtTime(150, 1.6);
+    bp.Q.value = 0.4;
+    tail.connect(bp);
+    this._env(ctx, bp, 0.05, 0.34, 0.12, 1.7).connect(out);
+    tail.start(0);
+  }
+
+  /** Pin pulled: a short metallic snap with the spoon ringing off after it. */
+  _buildPin(ctx) {
+    const out = ctx.destination;
+    for (const [f, t, g] of [[2400, 0, 0.35], [3100, 0.055, 0.22]]) {
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.setValueAtTime(f, 0);
+      o.frequency.exponentialRampToValueAtTime(f * 0.55, t + 0.05);
+      this._env(ctx, o, t, g, 0.001, 0.06).connect(out);
+      o.start(0); o.stop(t + 0.1);
+    }
   }
 
   /** Supersonic crack of a round passing nearby. */
@@ -827,6 +876,15 @@ export class AudioEngine {
     // Reflections off the far side of the street arrive a beat later.
     this.play('shotDistant', position || null, { gain: 0.22, delay: 0.09, rate: 0.8 });
   }
+
+  playExplosion(position) {
+    if (!this.ready) return;
+    this.play('explosion', position || null, { gain: 1.0, reverb: 1 });
+    this.play('tail', null, { gain: 0.55, delay: 0.08, rate: 0.7 });
+  }
+
+  playGrenadePin() { this.play('grenadePin', null, { gain: 0.5 }); }
+  playGrenadeThrow() { this.play('boltForward', null, { gain: 0.35, rate: 0.7 }); }
 
   playDryFire() { this.play('dryFire', null, { gain: 0.45 }); }
   playSelector() { this.play('selector', null, { gain: 0.4 }); }

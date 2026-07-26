@@ -372,6 +372,48 @@ export function buildHands(b) {
 }
 
 /**
+ * A gloved right hand wrapped around a frag, built at the origin so the
+ * viewmodel can swing the whole thing on one transform. The spoon is a separate
+ * plate held down by the fingers, because it is the detail that reads at this
+ * distance and tells the player the pin is already out.
+ */
+export function buildGrenadeHand(b) {
+  const glove = { layer: LAYER.GEAR_CLOTH, tint: [1.62, 1.26, 0.92], wear: 0.7, uvScale: 14 };
+  const gloveHard = { layer: LAYER.POLYMER, tint: [2.05, 1.72, 1.32], wear: 0.6, uvScale: 16 };
+  const sleeve = { layer: LAYER.GEAR_CLOTH, tint: [1.72, 1.58, 1.12], wear: 0.75, uvScale: 7 };
+  const shell = { layer: LAYER.GUNMETAL, tint: [0.46, 0.52, 0.44], wear: 0.5, uvScale: 20 };
+  const steel = { layer: LAYER.GUNMETAL, tint: [0.78, 0.78, 0.76], wear: 0.35, uvScale: 22 };
+
+  // ---- the grenade itself
+  b.addBlob(0, 0, 0, 0.032, 0.041, 0.032, 10, 8, shell);
+  b.addCylinderBetween(V(0, 0.040, 0), V(0, 0.056, 0), 0.011, 0.013, 10, steel);
+  // safety lever down the near side, and the ring still on it
+  b.addBox(0.027, 0.026, 0, 0.006, 0.056, 0.014, steel);
+  b.addCylinderBetween(V(0.028, 0.054, 0.014), V(0.028, 0.054, 0.020), 0.010, 0.010, 8, steel);
+
+  // ---- fingers over the lever, thumb across the top
+  for (let i = 0; i < 4; i++) {
+    const y = 0.026 - i * 0.019;
+    b.pushTransform(m(new THREE.Vector3(0.030, y, 0.004), new THREE.Euler(0, 0, -0.18)));
+    b.addBox(0, 0, -0.014, 0.019, 0.0165, 0.046, glove);
+    b.addBox(-0.004, -0.002, -0.040, 0.017, 0.015, 0.019, glove);
+    b.popTransform();
+  }
+  b.pushTransform(m(new THREE.Vector3(0.016, 0.030, 0.026), new THREE.Euler(-0.5, 0, -0.3)));
+  b.addBox(0, 0, -0.018, 0.018, 0.018, 0.044, glove);
+  b.popTransform();
+
+  // ---- palm behind the shell, then wrist and forearm out of frame
+  b.addBox(0.044, -0.004, 0.006, 0.030, 0.078, 0.062, glove);
+  b.addBox(0.052, 0.020, 0.006, 0.026, 0.030, 0.056, gloveHard);
+  b.pushTransform(m(new THREE.Vector3(0.062, -0.048, 0.030), new THREE.Euler(0.70, 0.30, -0.22)));
+  b.addBox(0, 0, 0.022, 0.050, 0.048, 0.050, glove);
+  b.addBox(0, 0, 0.054, 0.056, 0.054, 0.026, { ...gloveHard, tint: [0.42, 0.40, 0.36] });
+  taperedLimb(b, 0.070, 0.062, 0.165, sleeve);
+  b.popTransform();
+}
+
+/**
  * A forearm as a short stack of shrinking segments rather than one long box.
  * The extra silhouette breaks and the shading variation between facets are
  * what stop a sleeve reading as a painted rectangle at the edge of the screen.

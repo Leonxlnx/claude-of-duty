@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RayHit, SURFACE, SURFACE_INFO } from '../physics/BVH.js';
 import { ParticleSystem, PKIND } from '../fx/Particles.js';
 import { DecalSystem, DECAL } from '../fx/Decals.js';
-import { InstancedBatch, casingGeometry, magazineGeometry } from '../fx/InstancedBatch.js';
+import { InstancedBatch, casingGeometry, magazineGeometry, grenadeGeometry } from '../fx/InstancedBatch.js';
 import { SeededRandom } from '../core/SeededRandom.js';
 
 /**
@@ -22,6 +22,12 @@ const DEFAULT_ROUND = {
   headMultiplier: 2.0, limbMultiplier: 0.85, penetration: 0.6,
   falloffStart: 34, falloffEnd: 96, falloffFloor: 0.6
 };
+/** Fragmentation grenade: seconds on the fuse, blast radius and centre damage. */
+export const GRENADE = {
+  fuse: 2.7, radius: 7.0, damage: 165,
+  minSpeed: 7.5, maxSpeed: 22, chargeTime: 1.05, carried: 3
+};
+
 const DECAL_KIND_BY_SURFACE = [
   DECAL.HOLE_HARD,  // concrete
   DECAL.HOLE_HARD,  // plaster
@@ -54,9 +60,10 @@ export class Combat {
     this.decals.budget = Math.min(MAX_DECALS, quality.decalBudget);
     this.casings = new InstancedBatch(casingGeometry(), lightUniforms, 96, { roughness: 0.28, metal: 0.95 });
     this.mags = new InstancedBatch(magazineGeometry(), lightUniforms, 8, { roughness: 0.62, metal: 0.0 });
+    this.grenadeBatch = new InstancedBatch(grenadeGeometry(), lightUniforms, 12, { roughness: 0.55, metal: 0.35 });
 
     this.scene = new THREE.Scene();
-    this.scene.add(this.casings.mesh, this.mags.mesh);
+    this.scene.add(this.casings.mesh, this.mags.mesh, this.grenadeBatch.mesh);
     this.transparentScene = new THREE.Scene();
     this.transparentScene.add(this.decals.mesh, this.particles.mesh);
 
@@ -71,6 +78,8 @@ export class Combat {
 
     this._casingBodies = [];
     this._magBodies = [];
+    this._grenades = [];
+    this.onExplosion = null;
   }
 
   /**
@@ -471,6 +480,106 @@ export class Combat {
     this._magBodies.push(body);
   }
 
+  // ------------------------------------------------------------- explosives
+  /**
+   * Put a live grenade into the world. It is an ordinary rigid body until its
+   * fuse runs out, so it bounces off walls and rolls down steps like anything
+   * else the physics owns, and a badly judged throw comes back at you.
+   */
+  throwGrenade({ position, velocity, owner, team, spin }) {
+    const body = this.rigid.spawnOrRecycle();
+    if (!body) return null;
+    body.setBox(0.031, 0.040, 0.031, 0.4);
+    body.position.copy(position);
+    body.quaternion.setFromEuler(_euler.set(this.rng.next() * 6.28, this.rng.next() * 6.28, 0));
+    body.velocity.copy(velocity);
+    body.angular.copy(spin ?? _v.set(
+      (this.rng.next() - 0.5) * 12, (this.rng.next() - 0.5) * 12, (this.rng.next() - 0.5) * 12
+    ));
+    body.restitution = 0.34;
+    body.friction = 0.68;
+    body.maxLifetime = GRENADE.fuse + 2;
+    body.surface = SURFACE.METAL;
+
+    const slot = this.grenadeBatch.acquire([0.20, 0.23, 0.18]);
+    if (slot < 0) { this.rigid.remove(body); return null; }
+    body.userData = { batch: this.grenadeBatch, slot, kind: 'grenade' };
+    body.onContact = (impulse) => {
+      if (impulse > 0.02) this.audio?.playCasingBounce(body.position, Math.min(1, impulse * 12));
+    };
+
+    const live = { body, fuse: GRENADE.fuse, owner, team };
+    this._grenades.push(live);
+    return live;
+  }
+
+  /** Live grenades in the world, for the HUD and the AI to react to. */
+  get liveGrenades() { return this._grenades; }
+
+  /**
+   * Blast at a point. Damage falls off with distance and is refused outright
+   * when a wall is in the way, so cover works against explosives the same way
+   * it works against bullets.
+   */
+  detonate(position, owner, team) {
+    const density = this.quality.particleDensity;
+
+    for (const c of this.characters) {
+      if (!c.alive) continue;
+      const d = c.position.distanceTo(position);
+      if (d > GRENADE.radius) continue;
+
+      _p.copy(c.position);
+      _p.y += 0.1;
+      if (this.bvh.occluded(position, _p)) continue;
+
+      const falloff = 1 - (d / GRENADE.radius) ** 1.6;
+      c.applyDamage(GRENADE.damage * falloff, {
+        source: owner, point: position, direction: _dir.subVectors(_p, position).normalize(),
+        zone: 'body', kind: 'explosion'
+      });
+    }
+
+    // fireball, smoke column, dirt and a scorch on whatever is underneath
+    this.lights.push({
+      position: position.clone(), color: [1.0, 0.62, 0.26],
+      intensity: 26, radius: 14, life: 0.42, age: 0
+    });
+    for (let i = 0; i < Math.max(8, Math.round(26 * density)); i++) {
+      _v.set(this.rng.next() - 0.5, this.rng.next() * 0.8, this.rng.next() - 0.5)
+        .normalize().multiplyScalar(4 + this.rng.next() * 14);
+      this.particles.spawn({
+        position, velocity: _v, kind: PKIND.SPARK,
+        size: 0.03 + this.rng.next() * 0.05, stretch: 3 + this.rng.next() * 5,
+        color: [1.0, 0.72, 0.34], alpha: 1,
+        life: 0.22 + this.rng.next() * 0.4, drag: 2.4, gravity: 6, fade: 1
+      });
+    }
+    for (let i = 0; i < Math.max(6, Math.round(18 * density)); i++) {
+      _v.set(this.rng.next() - 0.5, this.rng.next() * 0.7 + 0.1, this.rng.next() - 0.5)
+        .normalize().multiplyScalar(1.5 + this.rng.next() * 4);
+      this.particles.spawn({
+        position, velocity: _v, kind: PKIND.SMOKE,
+        size: 0.35 + this.rng.next() * 0.5,
+        color: [0.30, 0.28, 0.26], alpha: 0.5,
+        life: 1.6 + this.rng.next() * 1.8, drag: 1.3, gravity: -0.4,
+        growth: 5.5, spin: (this.rng.next() - 0.5) * 1.2, fade: 1
+      });
+    }
+
+    _origin.copy(position);
+    _dir.set(0, -1, 0);
+    const ground = this.bvh.raycast(_origin, _dir, 3.0, this.hit);
+    if (ground.hit) {
+      _point.copy(position).addScaledVector(_dir, ground.t);
+      this.decals.add(_point, ground.normal, DECAL.SCORCH, 1.5 + this.rng.next() * 0.5,
+        { seed: this.rng.next() });
+    }
+
+    this.audio?.playExplosion?.(position);
+    this.onExplosion?.(position, owner, team);
+  }
+
   // ---------------------------------------------------------------- update
   update(dt, time, camera) {
     this.particles.update(dt, time);
@@ -498,8 +607,24 @@ export class Combat {
       else l.currentIntensity = l.intensity * (1 - l.age / l.life);
     }
 
+    // Fuses burn on their own clock, not on contact: a grenade that has not
+    // gone off yet is still a rigid body and may well be rolling back at you.
+    for (let i = this._grenades.length - 1; i >= 0; i--) {
+      const gr = this._grenades[i];
+      gr.fuse -= dt;
+      if (gr.fuse > 0 && gr.body.active) continue;
+      if (gr.body.active) this.detonate(gr.body.position, gr.owner, gr.team);
+      this.grenadeBatch.release(gr.body.userData?.slot ?? -1);
+      this.rigid.remove(gr.body);
+      this._grenades.splice(i, 1);
+    }
+
     this._syncBodies(this._casingBodies, this.casings);
     this._syncBodies(this._magBodies, this.mags);
+    for (const gr of this._grenades) {
+      this.grenadeBatch.setTransform(gr.body.userData.slot, gr.body.position, gr.body.quaternion);
+    }
+    this.grenadeBatch.flush();
 
     if (camera) this.particles.material.uniforms.uCameraPos.value.copy(camera.position);
   }
@@ -533,10 +658,13 @@ export class Combat {
     this.lights.length = 0;
     for (const b of this._casingBodies) this.rigid.remove(b);
     for (const b of this._magBodies) this.rigid.remove(b);
+    for (const gr of this._grenades) this.rigid.remove(gr.body);
     this._casingBodies.length = 0;
     this._magBodies.length = 0;
+    this._grenades.length = 0;
     this.casings.clear();
     this.mags.clear();
+    this.grenadeBatch.clear();
   }
 
   dispose() {
@@ -544,6 +672,7 @@ export class Combat {
     this.decals.dispose();
     this.casings.dispose();
     this.mags.dispose();
+    this.grenadeBatch.dispose();
   }
 }
 

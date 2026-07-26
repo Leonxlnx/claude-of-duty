@@ -508,7 +508,7 @@ export class RenderGraph {
 
     // ----------------------------------------------------------- motion blur
     if (q.motionBlur !== 'off') {
-      const strength = q.motionBlur === 'high' ? 1.0 : 0.55;
+      const strength = q.motionBlur === 'high' ? 0.8 : 0.45;
       const tm = this.tileMaxPass.uniforms;
       tm.uVelocity.value = this.gbuffer.textures[3];
       tm.uTexelSize.value.set(1 / this.renderWidth, 1 / this.renderHeight);

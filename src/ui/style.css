@@ -174,6 +174,29 @@ html, body {
   color: var(--ink-dim);
   letter-spacing: 0.16em;
 }
+#grenades {
+  margin-top: 7px;
+  font-size: 12px; letter-spacing: 0.16em; color: var(--ink-faint);
+  transition: color 140ms;
+}
+#grenades.ready { color: var(--accent); }
+#grenades .pips { letter-spacing: 0.24em; }
+#grenades .key { margin-left: 7px; opacity: 0.55; }
+
+/* Throw power, only while a grenade is actually being cooked. */
+#throw-power {
+  position: absolute; left: 50%; bottom: 27%;
+  width: 148px; height: 3px; margin-left: -74px;
+  background: rgba(255, 255, 255, 0.16);
+  opacity: 0; transition: opacity 120ms;
+}
+#throw-power.active { opacity: 1; }
+#throw-power .fill {
+  height: 100%; width: 0%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
 #reload-hint {
   position: absolute; right: 42px; bottom: 128px;
   font-size: 12px; letter-spacing: 0.2em; color: var(--accent);
@@ -231,13 +254,17 @@ html, body {
   border: 1px solid var(--line);
   backdrop-filter: blur(6px);
 }
-#score-strip .team {
+#score-strip .tally {
   font-size: 26px; font-weight: 600; line-height: 1;
   font-variant-numeric: tabular-nums;
   min-width: 46px; text-align: center;
+  color: var(--ink);
 }
-#score-strip .team.a { color: var(--team-a); }
-#score-strip .team.b { color: var(--team-b); }
+#score-strip .tally.down { color: var(--ink-dim); }
+#score-strip .tally-label {
+  font-size: 9px; letter-spacing: 0.2em; color: var(--ink-faint);
+  text-align: center; margin-top: 3px; text-transform: uppercase;
+}
 #score-strip .clock {
   font-size: 15px; color: var(--ink);
   font-variant-numeric: tabular-nums;

@@ -470,6 +470,46 @@ export class NavGrid {
     return null;
   }
 
+  /**
+   * A place to put someone back into the fight.
+   *
+   * Outdoors only — materialising inside somebody's front room is disorienting
+   * for the player and useless for the AI, which then has to find its way out
+   * before it can do anything. Wants elbow room, and prefers to be a long way
+   * from whoever is still alive on the other side, so a redeploy lands behind
+   * the fighting rather than in the middle of it.
+   *
+   * Returns null if nothing suitable turns up, and the caller falls back.
+   */
+  spawnPoint(rng, out, { enemies = [], minEnemyDist = 22, clearance = 1.0, samples = 96 } = {}) {
+    let best = -1, bestScore = -Infinity, bestX = 0, bestZ = 0;
+
+    for (let s = 0; s < samples; s++) {
+      const ix = (rng.next() * this.w) | 0;
+      const iz = (rng.next() * this.h) | 0;
+      const i = this.index(ix, iz);
+      if (!this.walkable[i] || this.indoor[i] || this.clearance[i] < clearance) continue;
+
+      const x = this.worldX(ix), z = this.worldZ(iz);
+      let nearest = Infinity;
+      for (const e of enemies) {
+        if (!e || e.alive === false) continue;
+        const d = Math.hypot(x - e.position.x, z - e.position.z);
+        if (d < nearest) nearest = d;
+      }
+      if (nearest < minEnemyDist) continue;
+
+      // Past the comfort distance, extra separation stops mattering; a little
+      // noise keeps repeat deaths from landing on the same paving slab.
+      const score = Math.min(nearest, minEnemyDist * 2.2)
+        + this.clearance[i] * 1.4 + rng.next() * 6;
+      if (score > bestScore) { bestScore = score; best = i; bestX = x; bestZ = z; }
+    }
+
+    if (best < 0) return null;
+    return out.set(bestX, this.height[best], bestZ);
+  }
+
   stats() {
     let walk = 0, cover = 0;
     for (let i = 0; i < this.walkable.length; i++) {

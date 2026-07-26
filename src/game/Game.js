@@ -18,6 +18,7 @@ import { PlayerTarget } from './PlayerTarget.js';
 import { Match } from './Match.js';
 import { ViewModel } from '../weapons/ViewModel.js';
 import { Weapon } from '../weapons/Weapon.js';
+import { GrenadeController } from '../weapons/GrenadeController.js';
 import { Combat } from '../combat/Combat.js';
 import { AudioEngine } from '../audio/AudioEngine.js';
 
@@ -34,7 +35,12 @@ import { showFatalOverlay } from '../ui/Fatal.js';
  * render rate from interpolated state.
  */
 
-const AI_PER_TEAM = 4;
+/**
+ * How many hostiles hold the district. There is no friendly side, so this is
+ * everyone in the match besides the player; they respawn on a timer, which
+ * keeps the pressure roughly constant however fast the player clears them.
+ */
+const OPPOSITION = 6;
 /**
  * Box-filter a GL readback into a small RGBA buffer, flipping the y axis so
  * row 0 is the top of the screen the way every other image API expects.
@@ -89,19 +95,37 @@ function describeContextFailure(statusMessage) {
 // How long a death is held before the respawn wait can be skipped, in seconds.
 const RESPAWN_SKIP_AFTER = 1.1;
 
-// Respawn placement: how many navmesh cells to try, how far an enemy has to be
-// before a line-of-sight check is worth paying for, and the distance at which a
-// candidate is good enough to stop looking.
-const RESPAWN_CANDIDATES = 24;
+// Respawn placement: how many candidates to draw from the navmesh, how far an
+// enemy has to be before a line-of-sight check is worth paying for, and the
+// separation a candidate has to clear before it is considered at all.
+const RESPAWN_CANDIDATES = 8;
 const RESPAWN_SIGHT_RANGE = 55;
 const RESPAWN_COMFORT = 34;
 
 // Fraction of the hip-fire field of view kept while aiming.
 const ADS_WORLD_ZOOM = 0.82;
-const ADS_VIEWMODEL_ZOOM = 0.58;
+const ADS_VIEWMODEL_ZOOM = 0.70;
 
 // How far the world camera opens up at a full sprint.
 const SPRINT_FOV_GAIN = 1.07;
+
+/**
+ * The frame time motion blur is tuned against.
+ *
+ * The velocity buffer holds how far each pixel moved over the last frame, so
+ * using it raw ties the shutter to the frame rate: the slower the machine, the
+ * longer every streak, which is precisely backwards — the frames that can least
+ * afford to look worse get smeared the hardest, and a sprint on a struggling
+ * machine drags the near wall clean across the screen. Rescaling to a fixed
+ * reference makes the blur mean a shutter speed instead of a frame.
+ */
+const MOTION_BLUR_REFERENCE_DT = 1 / 60;
+
+// Dynamic resolution: step size, floor as a fraction of the preset, and the
+// minimum seconds between two changes.
+const DYNRES_STEP = 0.1;
+const DYNRES_FLOOR = 0.6;
+const DYNRES_COOLDOWN = 1.0;
 
 const DIFFICULTY_SKILL = {
   recruit: [0.18, 0.38],
@@ -121,6 +145,7 @@ export class Game {
     this.onFrame = null;
     this._resizePending = true;
     this._dynScale = Settings.preset.renderScale;
+    this._dynCooldown = 0;
     this._frameTimes = [];
     this._pendingHits = [];
   }
@@ -218,6 +243,14 @@ export class Game {
       audio: this.audio, viewModel: this.viewModel,
       player: this.player, combat: this.combat
     });
+    this.grenades = new GrenadeController({
+      player: this.player, audio: this.audio,
+      onThrow: (origin, velocity) => {
+        this.combat.throwGrenade({
+          position: origin, velocity, owner: this.playerTarget, team: this.player.team
+        });
+      }
+    });
 
     await loading.step(0.80, 'Deploying opposition');
     this.rng = new SeededRandom(WORLD_SEED ^ 0x51de);
@@ -231,7 +264,7 @@ export class Game {
     this.director.setSpawnPoints(this.world.spawns.A, this.world.spawns.B);
     this.director.setPlayer(this.playerTarget);
 
-    this.match = new Match({ scoreLimit: 40, timeLimit: 600 });
+    this.match = new Match({ scoreLimit: 30, timeLimit: 600 });
 
     await loading.step(0.88, 'Building interface');
     this.hud = new HUD(this.uiRoot);
@@ -382,11 +415,12 @@ export class Game {
     this.match.reset();
     this.match.registerPlayer(0, { name: 'YOU', team: 'A', isLocal: true });
 
-    // Rebuild the opposition so a restart is genuinely fresh.
+    // Rebuild the opposition so a restart is genuinely fresh. One side only:
+    // the match is the player against the district, and a squad of friendlies
+    // stealing kills makes the score on the HUD somebody else's business.
     this.director.dispose();
     const [lo, hi] = DIFFICULTY_SKILL[Settings.data.difficulty] ?? DIFFICULTY_SKILL.regular;
-    this.director.spawnTeam('A', AI_PER_TEAM - 1, [lo, hi]);
-    this.director.spawnTeam('B', AI_PER_TEAM, [lo, hi]);
+    this.director.spawnTeam('B', OPPOSITION, [lo, hi]);
     for (const c of this.director.characters) {
       const idx = this.match.players.size;
       const name = Match.callsign(c.team, idx);
@@ -462,10 +496,10 @@ export class Game {
    *
    * Redeploying at the same end of the street every time turns the second half
    * of a match into a commute, so candidates come from the whole navmesh rather
-   * than a fixed spawn list. Each one is then scored on how far the nearest
-   * enemy is and whether any of them can already see the spot, so "anywhere"
-   * never means "in front of a muzzle". Good enough wins early — there is no
-   * value in finding the single best cell.
+   * than a fixed spawn list. The navmesh supplies open ground well behind the
+   * fighting; this then rejects anything an enemy can already see, because
+   * "well behind" and "out of sight" are not the same thing on a street with
+   * a clear line down it.
    */
   _pickRespawn() {
     const enemies = [];
@@ -473,31 +507,24 @@ export class Game {
       if (c.alive && c.team !== this.player.team) enemies.push(c);
     }
 
-    let best = null, bestScore = -Infinity;
+    let fallback = null;
     for (let attempt = 0; attempt < RESPAWN_CANDIDATES; attempt++) {
-      const p = this.nav.randomPoint(this.rng, _candidate);
-      if (!p) continue;
+      const p = this.nav.spawnPoint(this.rng, _candidate, {
+        enemies, minEnemyDist: RESPAWN_COMFORT
+      });
+      if (!p) break;
 
-      let nearest = Infinity, exposed = false;
+      let exposed = false;
       for (const e of enemies) {
-        const d = p.distanceTo(e.position);
-        if (d < nearest) nearest = d;
-        if (!exposed && d < RESPAWN_SIGHT_RANGE) {
-          _sightA.copy(p).y += 1.5;
-          _sightB.copy(e.position).y += 1.5;
-          exposed = !this.world.bvh.occluded(_sightA, _sightB);
-        }
+        if (p.distanceTo(e.position) > RESPAWN_SIGHT_RANGE) continue;
+        _sightA.copy(p).y += 1.5;
+        _sightB.copy(e.position).y += 1.5;
+        if (!this.world.bvh.occluded(_sightA, _sightB)) { exposed = true; break; }
       }
-
-      let score = Math.min(nearest === Infinity ? 90 : nearest, 60) + this.rng.next() * 6;
-      if (exposed) score -= 55;
-      if (score > bestScore) {
-        bestScore = score;
-        best = (best ?? new THREE.Vector3()).copy(p);
-      }
-      if (!exposed && nearest > RESPAWN_COMFORT) break;
+      if (!exposed) return p;
+      fallback = (fallback ?? new THREE.Vector3()).copy(p);
     }
-    return best;
+    return fallback;
   }
 
   _respawnPlayer(initial = false) {
@@ -543,17 +570,27 @@ export class Game {
 
   _fixedUpdate(dt) {
     this.time += dt;
+    this._steppedThisFrame = true;
     if (this.state !== 'playing') return;
 
     this.match.update(dt);
 
     if (this.player.alive) {
-      this.weapon.setTrigger(this.input.action('fire'));
-      this.player.wantsAds = this.input.action('aim');
-      if (this.input.actionPressed('reload')) this.weapon.startReload();
-      if (this.input.actionPressed('fireMode')) this.weapon.cycleFireMode();
-      if (this.input.actionPressed('inspect')) this._inspect();
+      const firing = this.input.action('fire');
+      if (this.input.actionPressed('grenade')) this.grenades.toggle();
+      this.grenades.update(dt, { firing });
+
+      // While a grenade is in hand the trigger belongs to it, and so does the
+      // right mouse button — there is nothing to aim down.
+      const armed = !this.grenades.blocksWeapon;
+      this.weapon.setTrigger(armed && firing);
+      this.player.wantsAds = armed && this.input.action('aim');
+      if (armed && this.input.actionPressed('reload')) this.weapon.startReload();
+      if (armed && this.input.actionPressed('fireMode')) this.weapon.cycleFireMode();
+      if (armed && this.input.actionPressed('inspect')) this._inspect();
     } else {
+      this.grenades.stow();
+      this.grenades.update(dt, { firing: false });
       this.weapon.setTrigger(false);
       this.respawnTimer -= dt;
       // A short beat so the kill registers, then the wait is the player's to
@@ -592,7 +629,8 @@ export class Game {
         player: this.player,
         weapon: this.weapon,
         lookDelta: _look.set(look.x * 0.0022, look.y * 0.0022),
-        wallProximity: this._wallProximity()
+        wallProximity: this._wallProximity(),
+        grenade: this.grenades
       });
       this.viewModel.root.visible = this.player.alive;
     } else {
@@ -617,13 +655,25 @@ export class Game {
         time: this.time,
         damageFlash: this.hud.damageFlash,
         criticalHealth: this.player.alive
-          ? Math.max(0, 1 - this.player.health / 32) : 1
+          ? Math.max(0, 1 - this.player.health / 32) : 1,
+        motionBlurScale: MOTION_BLUR_REFERENCE_DT / Math.max(dt, 1e-4)
       }
     );
 
     this._captureRequest?.();
     this._updateHud(dt);
-    this.input.endFrame();
+
+    // Only retire unconsumed key edges once the simulation has actually had a
+    // look at them. Render runs every frame; the fixed step only runs when the
+    // accumulator has filled, so a frame that arrives early has no step in it
+    // at all. Clearing regardless threw away whichever presses happened to land
+    // in those frames, and reload, fire mode and the grenade key would silently
+    // do nothing perhaps one press in ten — the kind of fault that reads as the
+    // key being unreliable rather than as a bug.
+    if (this._steppedThisFrame) {
+      this.input.endFrame();
+      this._steppedThisFrame = false;
+    }
     this._trackPerformance(performance.now() - t0, dt);
   }
 
@@ -680,7 +730,12 @@ export class Game {
     // run down an open street reads no differently from a walk. The viewmodel
     // camera is deliberately left out: widening it would swing the weapon
     // around the frame every time the player breaks into a run.
-    const wantSprint = this.player?.sprinting && this.player.alive ? 1 : 0;
+    //
+    // Driven by actual ground speed, not the sprint flag. That flag drops for a
+    // frame every time the player clears a kerb, and a boolean feeding a field
+    // of view turns each of those into a visible lurch toward the horizon and
+    // back — the game appears to surge forwards and backwards while running.
+    const wantSprint = this.player?.alive ? this.player.sprintNorm : 0;
     this._sprintFov = dt > 0
       ? this._sprintFov + (wantSprint - this._sprintFov) * Math.min(1, dt * 6)
       : wantSprint;
@@ -729,12 +784,16 @@ export class Game {
     const w = this.weapon.hudState();
     this.hud.updateAmmo(w.ammo, w.reserve, w.mode, w.reloading);
     this.hud.updateHealth(this.player.health, this.player.maxHealth);
+    this.hud.updateGrenades(this.grenades.hudState());
     this.hud.updateStance(
       this.player.crouched, this.player.sprinting,
       this.player.adsBlend > 0.6, Math.abs(this.player.leanBlend) > 0.25
     );
+    // One personal tally, not a team score: kills against the clock, and the
+    // losses column so the run has a cost attached to it.
+    const me = this.match.localPlayer();
     this.hud.updateScore(
-      this.match.scores.A, this.match.scores.B, this.match.timeLeft, this.match.scoreLimit
+      me?.kills ?? 0, me?.deaths ?? 0, this.match.timeLeft, this.match.scoreLimit
     );
     this.hud.updateCompass(this.player.yaw);
     this.hud.updateCrosshair(
@@ -790,8 +849,16 @@ export class Game {
   }
 
   /**
-   * Dynamic resolution: nudge the render scale to hold the frame budget.
-   * Small steps and a long window, or the image visibly breathes.
+   * Dynamic resolution: move the render scale to hold the frame budget.
+   *
+   * Changing the scale is not cheap — every target in the graph is reallocated
+   * and the temporal history is thrown away with them. Nudging by a fiftieth
+   * every frame therefore did the opposite of its job: once the frame budget
+   * slipped, it reallocated the whole graph on every single frame, which cost
+   * more than it saved, drove the scale straight to the floor and left it
+   * there, and reset TAA continuously so the image tore itself apart. Steps
+   * are now coarse, quantised so only a handful of sizes ever exist, and rate
+   * limited so a bad second cannot become a bad minute.
    */
   _trackPerformance(cpuMs, dt) {
     this._frameTimes.push(dt);
@@ -803,14 +870,21 @@ export class Game {
     this.frameStats.triangles = this.graph.stats.triangles;
     this.onFrame?.(dt, cpuMs);
 
-    if (Settings.data.dynamicResolution && this._frameTimes.length >= 60) {
+    this._dynCooldown = Math.max(0, this._dynCooldown - dt);
+    if (Settings.data.dynamicResolution && this._frameTimes.length >= 60 && this._dynCooldown === 0) {
       const target = 1 / 60;
       const base = this.quality.renderScale;
-      if (avg > target * 1.14) this._dynScale = Math.max(base * 0.62, this._dynScale - 0.02);
-      else if (avg < target * 0.86) this._dynScale = Math.min(base, this._dynScale + 0.01);
-      if (Math.abs(this._dynScale - this.graph.renderScale) > 0.019) {
-        this.graph.renderScale = this._dynScale;
+      let next = this._dynScale;
+      if (avg > target * 1.25) next = this._dynScale - DYNRES_STEP;
+      else if (avg < target * 0.80) next = this._dynScale + DYNRES_STEP;
+      next = THREE.MathUtils.clamp(
+        Math.round(next / DYNRES_STEP) * DYNRES_STEP, base * DYNRES_FLOOR, base
+      );
+      if (Math.abs(next - this.graph.renderScale) > 1e-3) {
+        this._dynScale = next;
+        this.graph.renderScale = next;
         this.graph.resize(this.graph.width, this.graph.height, true);
+        this._dynCooldown = DYNRES_COOLDOWN;
       }
     }
 

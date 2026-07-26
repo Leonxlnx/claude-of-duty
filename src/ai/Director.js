@@ -102,27 +102,46 @@ export class Director {
     }
   }
 
-  /** Place an agent at the spawn furthest from the nearest living enemy. */
+  /**
+   * Put an agent back into the fight.
+   *
+   * The opening wave uses the map's team spawns so a match starts with two
+   * sides facing each other down a street. Everything after that comes off the
+   * navmesh, which keeps reinforcements arriving from somewhere new and out of
+   * the buildings — the fixed spawn list is a handful of points, and jittering
+   * around them puts bodies through walls and drips them back in at the same
+   * two places all match.
+   */
   respawn(agent, initial = false) {
-    const points = this.spawnPoints[agent.character.team];
-    if (!points || !points.length) return;
-    const enemies = this._enemiesOf(agent.character.team);
+    const team = agent.character.team;
+    const enemies = this._enemiesOf(team);
 
-    let best = points[0], bestScore = -Infinity;
-    for (const p of points) {
-      let nearest = Infinity;
-      for (const e of enemies) {
-        if (!e.alive) continue;
-        nearest = Math.min(nearest, p.distanceToSquared(e.position));
-      }
-      const score = (nearest === Infinity ? 400 : Math.min(nearest, 3600)) + this.rng.next() * 60;
-      if (score > bestScore) { bestScore = score; best = p; }
+    let point = null;
+    if (!initial) {
+      point = this.nav.spawnPoint(this.rng, _spawn, { enemies, minEnemyDist: 26 })
+        ?? this.nav.spawnPoint(this.rng, _spawn, { enemies, minEnemyDist: 14 });
     }
 
-    _spawn.copy(best);
-    _spawn.x += (this.rng.next() - 0.5) * 2.6;
-    _spawn.z += (this.rng.next() - 0.5) * 2.6;
-    _spawn.y = this.nav.heightAt(_spawn.x, _spawn.z) + 0.05;
+    if (!point) {
+      const points = this.spawnPoints[team];
+      if (!points || !points.length) return;
+      let best = points[0], bestScore = -Infinity;
+      for (const p of points) {
+        let nearest = Infinity;
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          nearest = Math.min(nearest, p.distanceToSquared(e.position));
+        }
+        const score = (nearest === Infinity ? 400 : Math.min(nearest, 3600)) + this.rng.next() * 60;
+        if (score > bestScore) { bestScore = score; best = p; }
+      }
+      _spawn.copy(best);
+      _spawn.x += (this.rng.next() - 0.5) * 2.6;
+      _spawn.z += (this.rng.next() - 0.5) * 2.6;
+      _spawn.y = this.nav.heightAt(_spawn.x, _spawn.z);
+    }
+
+    _spawn.y += 0.05;
     agent.spawn(_spawn, this.rng.next() * Math.PI * 2);
     if (initial) agent.state = AI_STATE.PATROL;
   }

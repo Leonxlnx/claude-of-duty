@@ -308,13 +308,24 @@ uniform float uFrameIndex;
 in vec2 vUv;
 layout(location = 0) out vec4 outColor;
 
+// Longest streak any pixel may draw, as a fraction of the frame. Without a
+// ceiling the blur length is whatever the velocity buffer says, and a fast
+// sprint past near geometry produces vectors long enough to drag one part of
+// the image across another — the frame reads as torn rather than blurred.
+const float MAX_BLUR = 0.022;
+
+vec2 capBlur(vec2 v){
+  float len = length(v);
+  return len > MAX_BLUR ? v * (MAX_BLUR / len) : v;
+}
+
 void main(){
   vec4 center = texture(uColor, vUv);
-  vec2 nMax = texture(uNeighborMax, vUv).rg * uStrength;
+  vec2 nMax = capBlur(texture(uNeighborMax, vUv).rg * uStrength);
   float nLen = length(nMax / uTexelSize);
   if(nLen < 1.2){ outColor = center; return; }
 
-  vec2 vel = texture(uVelocity, vUv).rg * uStrength;
+  vec2 vel = capBlur(texture(uVelocity, vUv).rg * uStrength);
   float centerDepth = linearizeDepth(texture(uDepth, vUv).r);
   float jitter = hash12(gl_FragCoord.xy + uFrameIndex*7.3) - 0.5;
 

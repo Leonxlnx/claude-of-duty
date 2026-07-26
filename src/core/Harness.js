@@ -24,10 +24,31 @@ export function installHarness(game) {
       game.input.inject({ key: code, down });
       if (down) held.add(code); else held.delete(code);
     },
-    async tap(code, ms = 60) {
+    async tap(code, seconds = 0.08) {
       api.key(code, true);
-      await sleep(ms);
+      await api.wait(seconds);
       api.key(code, false);
+    },
+
+    /**
+     * Wait out `seconds` of simulated time, not wall-clock time.
+     *
+     * Under a software rasteriser a frame can take a quarter of a second, and
+     * the loop only ever advances the fixed step so far per frame — so the
+     * simulation runs at a fraction of real speed, measured as low as a
+     * seventh. Every animation gate in the game is in simulated seconds, so a
+     * test that sleeps for the length of a reload with `setTimeout` is really
+     * sleeping for a seventh of one, and then asserts on a weapon still halfway
+     * through it. Waiting on the clock the game actually uses makes the timing
+     * of a test mean the same thing on a workstation and in CI.
+     *
+     * Capped in real time so a stalled loop fails the test rather than hanging.
+     */
+    async wait(seconds, realTimeout = 30000) {
+      const until = game.time + seconds;
+      const deadline = performance.now() + realTimeout;
+      while (game.time < until && performance.now() < deadline) await sleep(8);
+      return game.time;
     },
     releaseAll() {
       for (const code of [...held]) api.key(code, false);
@@ -125,7 +146,13 @@ export function installHarness(game) {
           position: game.player.controller.position.toArray().map(round3),
           yaw: round3(game.player.yaw),
           pitch: round3(game.player.pitch),
-          stance: game.player.stance
+          stance: game.player.stance,
+          sliding: game.player.sliding,
+          speed: round3(game.player.speed2D)
+        },
+        grenades: {
+          ...game.grenades.hudState(),
+          live: game.combat.liveGrenades.length
         },
         weapon: {
           name: game.weapon.spec.name,

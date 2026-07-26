@@ -1,4 +1,7 @@
-const STORAGE_KEY = 'dust-corridor.settings.v1';
+// Bumped when the default bindings change in a way that a stored set would
+// contradict: saved keys win over defaults on load, so leaving v1 in place
+// would keep B on the fire selector while the grenade also claimed it.
+const STORAGE_KEY = 'dust-corridor.settings.v2';
 
 export const QUALITY_PRESETS = {
   low: {
@@ -45,8 +48,8 @@ const DEFAULTS = {
   keybinds: {
     fire: 'Mouse0', aim: 'Mouse2',
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
-    jump: 'Space', crouch: 'ControlLeft', sprint: 'ShiftLeft',
-    reload: 'KeyR', inspect: 'KeyF', fireMode: 'KeyB',
+    jump: 'Space', crouch: 'ControlLeft', sprint: 'ShiftLeft', slide: 'KeyC',
+    reload: 'KeyR', inspect: 'KeyF', fireMode: 'KeyV', grenade: 'KeyB',
     leanLeft: 'KeyQ', leanRight: 'KeyE', pause: 'Escape', scoreboard: 'Tab'
   },
   // per-preset overrides applied on top of the quality preset

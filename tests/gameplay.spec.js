@@ -19,7 +19,7 @@ test.describe('movement', () => {
 
     expect(travelled).toBeGreaterThan(1.5);
     // Loose upper bound: catches a teleport or a fall, not a tuning change.
-    expect(travelled).toBeLessThan(20);
+    expect(travelled).toBeLessThan(30);
     // Never falls through the map, never climbs a wall.
     expect(after.player.position[1]).toBeGreaterThan(-2);
     expect(after.player.position[1]).toBeLessThan(12);
@@ -161,6 +161,230 @@ test.describe('movement', () => {
   });
 });
 
+test.describe('slide', () => {
+  test('crouching out of a sprint carries speed and drops the head', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 1500);
+
+    const run = await page.evaluate(async () => {
+      const g = window.__game;
+      const p = g.player;
+      const h = window.__harness;
+      const wait = (s) => h.wait(s);
+      // The AI will happily end a ten-second experiment about running.
+      p.spawnProtect = 1e9;
+
+      // A slide needs a run-up, and where the player happens to spawn may not
+      // have one — a run that ends against a market stall never gets near
+      // sliding pace, and the test then reports a broken slide. Face down the
+      // longest clear line from here and, if the run still bogs down, try the
+      // next best one.
+      const Vec = p.eye.constructor;
+      const from = new Vec();
+      const clearAhead = (angle) => {
+        const dir = new Vec(-Math.sin(angle), 0, -Math.cos(angle));
+        from.copy(p.controller.position);
+        let d = 40;
+        for (const hy of [0.4, 1.1, 1.7]) {
+          const hit = g.world.bvh.raycast(new Vec(from.x, from.y + hy, from.z), dir, 40);
+          if (hit.hit) d = Math.min(d, hit.t);
+        }
+        return d;
+      };
+      const headings = [];
+      for (let a = 0; a < 24; a++) {
+        const ang = (a / 24) * Math.PI * 2;
+        headings.push({ ang, d: clearAhead(ang) });
+      }
+      headings.sort((x, y) => y.d - x.d);
+
+      h.releaseAll();
+      await wait(0.4);
+      const standingEye = p.eye.y - p.controller.position.y;
+
+      let sprintSpeed = 0, clear = 0;
+      for (const { ang, d } of headings.slice(0, 4)) {
+        p.yaw = ang;
+        p.pitch = 0;
+        h.key('KeyW', true);
+        h.key('ShiftLeft', true);
+        await wait(1.2);
+        sprintSpeed = p.speed2D;
+        clear = d;
+        if (sprintSpeed > 7) break;
+        h.releaseAll();
+        await wait(0.5);
+      }
+
+      h.key('KeyC', true);
+      let entrySpeed = 0, sliding = false, lowestEye = Infinity;
+      for (let i = 0; i < 16; i++) {
+        await wait(0.04);
+        if (p.sliding) sliding = true;
+        entrySpeed = Math.max(entrySpeed, p.speed2D);
+        lowestEye = Math.min(lowestEye, p.eye.y - p.controller.position.y);
+      }
+
+      h.releaseAll();
+      await wait(1.4);
+      return {
+        sprintSpeed, entrySpeed, sliding, standingEye, lowestEye, clear,
+        endedCleanly: !p.sliding,
+        settledSpeed: p.speed2D
+      };
+    });
+
+    // A slide is only worth the key if it buys pace over the sprint it costs.
+    expect(run.sliding).toBe(true);
+    expect(run.sprintSpeed).toBeGreaterThan(6);
+    expect(run.entrySpeed).toBeGreaterThan(run.sprintSpeed);
+    // And it has to put the head down, or it is just running.
+    expect(run.standingEye - run.lowestEye).toBeGreaterThan(0.3);
+    // It ends on its own rather than becoming a permanent movement mode.
+    expect(run.endedCleanly).toBe(true);
+    expect(run.settledSpeed).toBeLessThan(1);
+  });
+
+  test('a slide cannot be started from a standstill', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 1500);
+
+    const still = await page.evaluate(async () => {
+      const p = window.__game.player;
+      const h = window.__harness;
+      h.releaseAll();
+      await h.wait(0.5);
+      h.key('KeyC', true);
+      await h.wait(0.4);
+      const state = { sliding: p.sliding, crouched: p.crouched };
+      h.releaseAll();
+      return state;
+    });
+
+    expect(still.sliding).toBe(false);
+    // The key is still a crouch, it just does not launch anything.
+    expect(still.crouched).toBe(true);
+  });
+});
+
+test.describe('grenades', () => {
+  test('B takes one out, B again puts it away, and nothing is spent', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 1500);
+
+    const cycle = await page.evaluate(async () => {
+      const g = window.__game;
+      const h = window.__harness;
+      const wait = (s) => h.wait(s);
+      g.player.spawnProtect = 1e9;
+      const before = g.grenades.count;
+
+      await h.tap('KeyB');
+      await wait(0.5);
+      const out = { equipped: g.grenades.equipped, count: g.grenades.count };
+
+      await h.tap('KeyB');
+      await wait(0.6);
+      return {
+        before, out,
+        stowed: !g.grenades.equipped,
+        after: g.grenades.count,
+        live: g.combat.liveGrenades.length
+      };
+    });
+
+    expect(cycle.out.equipped).toBe(true);
+    expect(cycle.out.count).toBe(cycle.before);
+    // Backing out is free — that is what makes committing to a throw reasonable.
+    expect(cycle.stowed).toBe(true);
+    expect(cycle.after).toBe(cycle.before);
+    expect(cycle.live).toBe(0);
+  });
+
+  test('holding fire charges the throw and releasing sends it further', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 1500);
+
+    const thrown = await page.evaluate(async () => {
+      const g = window.__game;
+      const h = window.__harness;
+      const wait = (s) => h.wait(s);
+
+      // Somewhere with room to throw, looking at the horizon.
+      g.player.pitch = 0;
+      g.player.spawnProtect = 1e9;
+      h.releaseAll();
+      await wait(0.3);
+
+      const measure = async (hold) => {
+        await h.tap('KeyB');
+        await wait(0.45);
+        h.fire(true);
+        await wait(hold);
+        const charge = g.grenades.charge;
+        h.fire(false);
+        await wait(0.25);
+        const live = g.combat.liveGrenades;
+        const speed = live.length
+          ? Math.hypot(live[live.length - 1].body.velocity.x, live[live.length - 1].body.velocity.z)
+          : 0;
+        // The throw animation and the rifle coming back take about seven
+        // tenths; B is deliberately ignored until that has finished.
+        await wait(0.9);
+        return { charge, speed, count: g.grenades.count };
+      };
+
+      const before = g.grenades.count;
+      const light = await measure(0.06);
+      const full = await measure(1.3);
+      h.releaseAll();
+      return { before, light, full };
+    });
+
+    // A tap throws it underarm, a held press winds up and sends it downrange.
+    expect(thrown.light.charge).toBeLessThan(0.35);
+    expect(thrown.full.charge).toBeGreaterThan(0.9);
+    expect(thrown.full.speed).toBeGreaterThan(thrown.light.speed + 5);
+    // Each throw costs exactly one grenade.
+    expect(thrown.light.count).toBe(thrown.before - 1);
+    expect(thrown.full.count).toBe(thrown.before - 2);
+  });
+
+  test('a grenade goes off on its fuse and hurts what is next to it', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 1500);
+
+    const blast = await page.evaluate(async () => {
+      const g = window.__game;
+      const Vec = g.player.eye.constructor;
+      const victim = g.director.agents.find((a) => a.alive);
+      if (!victim) return null;
+
+      const health = victim.character.health;
+      const at = new Vec().copy(victim.controller.position);
+      at.y += 0.9;
+
+      g.combat.detonate(at, null, 'A');
+      await new Promise((r) => setTimeout(r, 200));
+
+      // And a body the far side of a wall is not hurt by the same blast.
+      const shielded = g.director.agents.find(
+        (a) => a.alive && a !== victim
+          && g.world.bvh.occluded(at, new Vec().copy(a.controller.position).setY(a.controller.position.y + 0.9))
+      );
+
+      return {
+        damaged: health - victim.character.health,
+        shieldedUnhurt: shielded ? shielded.character.health : null
+      };
+    });
+
+    if (!blast) test.skip(true, 'no living enemy to blow up');
+    expect(blast.damaged).toBeGreaterThan(40);
+    if (blast.shieldedUnhurt !== null) expect(blast.shieldedUnhurt).toBe(100);
+  });
+});
+
 test.describe('respawn', () => {
   test('redeploys scatter across the map and avoid enemy eyes', async ({ page }) => {
     await boot(page, '?auto=1');
@@ -168,8 +392,8 @@ test.describe('respawn', () => {
 
     const spread = await page.evaluate(() => {
       const g = window.__game;
-      const Vec = g.player.eye.constructor;
       const picks = [];
+      let indoorPicks = 0;
       for (let i = 0; i < 20; i++) {
         const spot = g._pickRespawn();
         if (!spot) continue;
@@ -178,11 +402,14 @@ test.describe('respawn', () => {
           if (!c.alive || c.team === g.player.team) continue;
           nearest = Math.min(nearest, spot.distanceTo(c.position));
         }
+        const cell = g.nav.index(g.nav.cellX(spot.x), g.nav.cellZ(spot.z));
+        if (g.nav.indoor[cell]) indoorPicks++;
         picks.push({ x: spot.x, z: spot.z, nearest });
       }
       const cells = new Set(picks.map((p) => `${Math.round(p.x / 10)},${Math.round(p.z / 10)}`));
       return {
         picked: picks.length,
+        indoorPicks,
         distinctAreas: cells.size,
         span: Math.max(...picks.map((p) => p.x)) - Math.min(...picks.map((p) => p.x)),
         closestEnemy: Math.min(...picks.map((p) => p.nearest))
@@ -195,6 +422,9 @@ test.describe('respawn', () => {
     expect(spread.span).toBeGreaterThan(25);
     // And never on top of someone.
     expect(spread.closestEnemy).toBeGreaterThan(12);
+    // Materialising inside somebody's front room is disorienting and leaves
+    // the AI walking into furniture, so every candidate is open ground.
+    expect(spread.indoorPicks).toBe(0);
   });
 });
 
@@ -286,7 +516,7 @@ test.describe('gunplay', () => {
     const modes = await page.evaluate(async () => {
       const seen = [window.__game.weapon.fireMode];
       for (let i = 0; i < 3; i++) {
-        await window.__harness.tap('KeyB');
+        await window.__harness.tap('KeyV');
         await new Promise((r) => setTimeout(r, 220));
         seen.push(window.__game.weapon.fireMode);
       }

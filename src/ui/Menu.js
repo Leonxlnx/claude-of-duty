@@ -30,9 +30,10 @@ const BIND_ORDER = [
   ['fire', 'Fire'], ['aim', 'Aim down sights'],
   ['forward', 'Move forward'], ['back', 'Move back'],
   ['left', 'Strafe left'], ['right', 'Strafe right'],
-  ['jump', 'Jump'], ['crouch', 'Crouch'], ['sprint', 'Sprint'],
+  ['jump', 'Jump'], ['crouch', 'Crouch'], ['sprint', 'Sprint'], ['slide', 'Slide'],
   ['leanLeft', 'Peek left'], ['leanRight', 'Peek right'],
-  ['reload', 'Reload'], ['fireMode', 'Fire mode'], ['inspect', 'Inspect weapon'],
+  ['grenade', 'Grenade'], ['reload', 'Reload'],
+  ['fireMode', 'Fire mode'], ['inspect', 'Inspect weapon'],
   ['scoreboard', 'Scoreboard'], ['pause', 'Pause']
 ];
 
@@ -365,7 +366,7 @@ export class Menu {
     this.board.innerHTML = `
       <div class="board">
         <div class="result ${won ? 'win' : 'loss'}">${won ? 'Victory' : 'Defeat'}</div>
-        <div class="final">${scoreA} — ${scoreB} &nbsp;·&nbsp; ${reason}</div>
+        <div class="final">${scoreA} eliminated &nbsp;·&nbsp; ${scoreB} lost &nbsp;·&nbsp; ${reason}</div>
         <table>
           <thead>
             <tr><th>Operator</th><th>Kills</th><th>Deaths</th><th>K/D</th><th>Headshots</th><th>Accuracy</th></tr>
@@ -420,9 +421,9 @@ const TEMPLATE = /* html */`
   </div>
 </div>
 <div class="menu-footer">
-  <div><kbd>WASD</kbd> move &nbsp; <kbd>SHIFT</kbd> sprint &nbsp; <kbd>CTRL</kbd> crouch &nbsp; <kbd>SPACE</kbd> jump</div>
+  <div><kbd>WASD</kbd> move &nbsp; <kbd>SHIFT</kbd> sprint &nbsp; <kbd>CTRL</kbd> crouch &nbsp; <kbd>C</kbd> slide &nbsp; <kbd>SPACE</kbd> jump</div>
   <div><kbd>Q</kbd> <kbd>E</kbd> peek round corners &nbsp; <kbd>LMB</kbd> fire &nbsp; <kbd>RMB</kbd> aim</div>
-  <div><kbd>R</kbd> reload &nbsp; <kbd>B</kbd> fire mode &nbsp; <kbd>F</kbd> inspect</div>
+  <div><kbd>B</kbd> grenade, hold <kbd>LMB</kbd> for range &nbsp; <kbd>R</kbd> reload &nbsp; <kbd>V</kbd> fire mode &nbsp; <kbd>F</kbd> inspect</div>
   <div><kbd>TAB</kbd> scoreboard &nbsp; <kbd>ESC</kbd> pause</div>
 </div>
 <div class="panel">

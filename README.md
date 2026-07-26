@@ -1,8 +1,9 @@
 # Dust Corridor
 
 A browser-native first-person tactical shooter. One map, one match, no server:
-a team deathmatch fought through a sunlit North African market district against
-procedurally animated AI.
+you against a squad holding a sunlit North African market district. No friendly
+side and no team score — one tally, yours, against procedurally animated AI that
+keeps redeploying.
 
 Everything you see is generated at runtime. There is no `.glb`, no `.hdr`, no
 `.png`, and no `.wav` anywhere in the repository. The map, its materials, the
@@ -30,18 +31,37 @@ It writes `test-results/performance.json` with frame-time percentiles.
 
 ## Controls
 
-`W A S D` move · `Shift` sprint · `Ctrl` crouch · `Space` jump ·
+`W A S D` move · `Shift` sprint · `Ctrl` or `C` crouch · `C` slide · `Space` jump ·
 `Q` / `E` peek left and right · **Left mouse** fire · **Right mouse** aim ·
-`R` reload · `B` fire mode · `F` inspect · `Tab` scoreboard · `Esc` pause ·
-`` ` `` cycle render debug views.
+`B` grenade · `R` reload · `V` fire mode · `F` inspect · `Tab` scoreboard ·
+`Esc` pause · `` ` `` cycle render debug views.
 
 Peeking slides the head — and with it the muzzle — off the body so you can
 clear a corner without walking your hitbox into the open. It stops short of
 whatever you lean into, so you cannot peek, or shoot, through a wall.
 
-Dying redeploys you somewhere else entirely: candidate positions are drawn
-from the whole navmesh and scored on enemy distance and line of sight, so no
-two lives start in the same doorway. `Space` skips the remaining wait.
+`C` crouches, and crouches out of a sprint into a slide: the speed cap lifts for
+a moment and then bleeds off, steering is weak while it runs, and the head goes
+down. It buys ground and a low profile in exchange for not being able to change
+your mind. It needs pace behind it — from a standstill `C` is only a crouch —
+but the bar sits just under walking speed, so a run down a street full of stalls
+that never reaches full sprint still slides.
+
+`B` pulls a grenade. Hold **left mouse** to wind up — the meter under the
+crosshair is throw distance — and release to throw. The rifle comes back on its
+own afterwards. `B` again puts the grenade away at no cost.
+
+The fuse starts when the pin does, not when the grenade lands, so a
+long throw arrives with less of it left; cooking one too long is your problem.
+Blast damage falls off with distance and stops at walls, so cover works against
+explosives the way it works against bullets.
+
+Dying redeploys you somewhere else entirely: candidates are drawn from the open
+parts of the navmesh — never inside a building — and rejected if an enemy can
+already see the spot, so no two lives start in the same doorway and none start
+in front of a muzzle. `Space` skips the remaining wait. The opposition
+redeploys the same way, so clearing the street buys you time rather than
+ending the match.
 
 All bindings are remappable in Settings.
 
