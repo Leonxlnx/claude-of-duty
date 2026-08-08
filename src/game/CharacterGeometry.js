@@ -53,11 +53,15 @@ export const TEAM_PALETTES = {
     skin: [0.70, 0.51, 0.38]
   },
   B: {
-    uniform: [0.47, 0.45, 0.42],   // grey-green field uniform
-    carrier: [0.14, 0.14, 0.15],   // near-black carrier
-    helmet: [0.27, 0.28, 0.29],
-    accent: [0.66, 0.15, 0.11],    // team red
-    gloves: [0.11, 0.11, 0.11],
+    // Warm olive against cold near-black. Under a midday sun a purely
+    // value-based split washes out — the exposure lifts the vest until it sits
+    // a shade off the sleeves — but a hue split survives it, so the carrier
+    // reads as armour over cloth rather than as a slightly darker rectangle.
+    uniform: [0.40, 0.37, 0.29],   // olive drab field uniform
+    carrier: [0.13, 0.13, 0.16],   // near-black, cool
+    helmet: [0.21, 0.22, 0.25],
+    accent: [0.68, 0.14, 0.10],    // team red
+    gloves: [0.10, 0.10, 0.11],
     skin: [0.60, 0.42, 0.32]
   }
 };

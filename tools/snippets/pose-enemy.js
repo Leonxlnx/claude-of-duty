@@ -11,7 +11,14 @@
 //   { distance, height, angle, stance, aiming, team }
 
 const cfg = Object.assign(
-  { distance: 3.2, height: 1.05, angle: 0.6, stance: 'stand', aiming: true, team: null },
+  {
+    distance: 3.2, height: 1.05, angle: 0.6, stance: 'stand', aiming: true,
+    team: null,
+    // Radians to turn the subject away from the lens. Aiming straight down the
+    // barrel at the camera foreshortens the carbine into a pipe; a framing that
+    // is meant to judge the weapon needs the subject side-on to it.
+    faceOffset: 0
+  },
   window.__poseEnemy || {}
 );
 
@@ -46,7 +53,7 @@ const camZ = MARK.z + Math.cos(angle) * cfg.distance;
 const camY = g.world.groundAt(camX, camZ) + 0.1;
 // The rig's forward is (-sin yaw, 0, -cos yaw), so facing the camera is the
 // negated delta — with the delta itself the subject turns its back on the lens.
-const faceYaw = Math.atan2(-(camX - MARK.x), -(camZ - MARK.z));
+const faceYaw = Math.atan2(-(camX - MARK.x), -(camZ - MARK.z)) + cfg.faceOffset;
 
 const control = { yaw: faceYaw, pitch: -0.05, stance: cfg.stance, aiming: cfg.aiming };
 

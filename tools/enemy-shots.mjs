@@ -20,6 +20,7 @@ const only = (process.argv[3] || '').split(',').filter(Boolean);
 
 const FRAMINGS = [
   { name: 'torso', distance: 1.7, height: 1.25, angle: 0.6 },
+  { name: 'weapon', distance: 2.2, height: 1.2, angle: 0.5, faceOffset: 1.35 },
   { name: 'front', distance: 3.0, height: 1.05, angle: 0.0 },
   { name: 'threequarter', distance: 3.0, height: 1.05, angle: 0.7 },
   { name: 'side', distance: 3.0, height: 1.05, angle: 1.57 },
