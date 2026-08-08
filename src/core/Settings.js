@@ -4,31 +4,95 @@
 // trap alive on the machines that suffer from it.
 const STORAGE_KEY = 'dust-corridor.settings.v3';
 
-export const QUALITY_PRESETS = {
-  low: {
+/**
+ * Ten quality levels, where 4 is what used to be called "ultra".
+ *
+ * The old top preset rendered at exactly native resolution, so there was
+ * nothing above "no aliasing beyond what TAA removes" — no supersampling, no
+ * sharper shadows, nowhere for a strong machine to spend. Levels 5 and up
+ * exist to be spent: the render target grows past the display (the single
+ * biggest lever on how crisp a frame looks, because every pixel is then an
+ * average of several), shadows sharpen, AO and cloud march get more samples.
+ *
+ * `renderScale` is a linear multiplier on each axis, so level 8 at 1.6 is 2.6x
+ * the pixels of native. That is the cost, and it is meant to be.
+ *
+ * Motion blur backs off as the level rises rather than increasing: at the top
+ * the point is a clean, resolved image, and blur is the opposite of that.
+ */
+export const QUALITY_LEVELS = [
+  { // 1
     renderScale: 0.72, shadowResolution: 1024, shadowCascades: 3, aoSamples: 4, aoEnabled: true,
     cloudSteps: 12, particleDensity: 0.45, motionBlur: 'off', bloom: true, taa: true,
-    contactShadows: false, decalBudget: 96, maxRigidBodies: 90, heatHaze: false
+    contactShadows: false, decalBudget: 96, maxRigidBodies: 90, heatHaze: false, sharpen: 0.30
   },
-  medium: {
+  { // 2
     renderScale: 0.85, shadowResolution: 1536, shadowCascades: 4, aoSamples: 6, aoEnabled: true,
     cloudSteps: 20, particleDensity: 0.7, motionBlur: 'low', bloom: true, taa: true,
-    contactShadows: true, decalBudget: 160, maxRigidBodies: 140, heatHaze: true
+    contactShadows: true, decalBudget: 160, maxRigidBodies: 140, heatHaze: true, sharpen: 0.32
   },
-  high: {
+  { // 3
     renderScale: 1.0, shadowResolution: 2048, shadowCascades: 4, aoSamples: 9, aoEnabled: true,
     cloudSteps: 30, particleDensity: 1.0, motionBlur: 'low', bloom: true, taa: true,
-    contactShadows: true, decalBudget: 256, maxRigidBodies: 200, heatHaze: true
+    contactShadows: true, decalBudget: 256, maxRigidBodies: 200, heatHaze: true, sharpen: 0.32
   },
-  ultra: {
+  { // 4 — the old "ultra"
     renderScale: 1.0, shadowResolution: 3072, shadowCascades: 4, aoSamples: 12, aoEnabled: true,
-    cloudSteps: 44, particleDensity: 1.35, motionBlur: 'high', bloom: true, taa: true,
-    contactShadows: true, decalBudget: 384, maxRigidBodies: 260, heatHaze: true
+    cloudSteps: 44, particleDensity: 1.35, motionBlur: 'low', bloom: true, taa: true,
+    contactShadows: true, decalBudget: 384, maxRigidBodies: 260, heatHaze: true, sharpen: 0.34
+  },
+  { // 5 — first level that supersamples
+    renderScale: 1.15, shadowResolution: 3072, shadowCascades: 4, aoSamples: 14, aoEnabled: true,
+    cloudSteps: 52, particleDensity: 1.5, motionBlur: 'low', bloom: true, taa: true,
+    contactShadows: true, decalBudget: 448, maxRigidBodies: 300, heatHaze: true, sharpen: 0.36
+  },
+  { // 6
+    renderScale: 1.3, shadowResolution: 4096, shadowCascades: 4, aoSamples: 16, aoEnabled: true,
+    cloudSteps: 64, particleDensity: 1.6, motionBlur: 'off', bloom: true, taa: true,
+    contactShadows: true, decalBudget: 512, maxRigidBodies: 340, heatHaze: true, sharpen: 0.38
+  },
+  { // 7
+    renderScale: 1.45, shadowResolution: 4096, shadowCascades: 5, aoSamples: 18, aoEnabled: true,
+    cloudSteps: 76, particleDensity: 1.75, motionBlur: 'off', bloom: true, taa: true,
+    contactShadows: true, decalBudget: 576, maxRigidBodies: 380, heatHaze: true, sharpen: 0.40
+  },
+  { // 8
+    renderScale: 1.6, shadowResolution: 6144, shadowCascades: 5, aoSamples: 20, aoEnabled: true,
+    cloudSteps: 88, particleDensity: 1.9, motionBlur: 'off', bloom: true, taa: true,
+    contactShadows: true, decalBudget: 640, maxRigidBodies: 420, heatHaze: true, sharpen: 0.42
+  },
+  { // 9
+    renderScale: 1.8, shadowResolution: 6144, shadowCascades: 5, aoSamples: 22, aoEnabled: true,
+    cloudSteps: 104, particleDensity: 2.0, motionBlur: 'off', bloom: true, taa: true,
+    contactShadows: true, decalBudget: 704, maxRigidBodies: 460, heatHaze: true, sharpen: 0.44
+  },
+  { // 10 — 4x the pixels of native. For a machine with nothing better to do.
+    renderScale: 2.0, shadowResolution: 8192, shadowCascades: 5, aoSamples: 24, aoEnabled: true,
+    cloudSteps: 120, particleDensity: 2.2, motionBlur: 'off', bloom: true, taa: true,
+    contactShadows: true, decalBudget: 768, maxRigidBodies: 500, heatHaze: true, sharpen: 0.46
   }
+];
+
+/** The old names, kept so saved profiles and the harness keep working. */
+export const QUALITY_PRESETS = {
+  low: QUALITY_LEVELS[0],
+  medium: QUALITY_LEVELS[1],
+  high: QUALITY_LEVELS[2],
+  ultra: QUALITY_LEVELS[3]
 };
 
+const QUALITY_ALIAS = { low: 1, medium: 2, high: 3, ultra: 4 };
+
+/** Accepts a 1-10 level or one of the legacy names. */
+export function resolveQualityLevel(value) {
+  const n = typeof value === 'number' ? value : QUALITY_ALIAS[value];
+  if (!n || Number.isNaN(n)) return 3;
+  return Math.min(QUALITY_LEVELS.length, Math.max(1, Math.round(n)));
+}
+
 const DEFAULTS = {
-  quality: 'high',
+  // 1-10; 4 is the old "ultra". Legacy names still resolve.
+  quality: 3,
   sensitivity: 0.9,
   adsMultiplier: 0.72,
   fov: 90,
@@ -141,9 +205,11 @@ class SettingsStore {
 
   onChange(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
 
+  get qualityLevel() { return resolveQualityLevel(this.data.quality); }
+
   get preset() {
-    const base = QUALITY_PRESETS[this.data.quality] || QUALITY_PRESETS.high;
-    return { ...base, ...this.data.overrides };
+    const base = QUALITY_LEVELS[this.qualityLevel - 1];
+    return { ...base, level: this.qualityLevel, ...this.data.overrides };
   }
 
   reset() {

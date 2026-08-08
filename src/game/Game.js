@@ -125,7 +125,12 @@ const MOTION_BLUR_REFERENCE_DT = 1 / 60;
 // minimum seconds between two changes.
 const DYNRES_STEP = 0.1;
 const DYNRES_FLOOR = 0.6;
-const DYNRES_COOLDOWN = 1.0;
+// Seconds between scale changes. Every change reallocates the graph and resets
+// the temporal history with it, which costs one fully aliased frame — so a
+// marginal frame budget produced a visible hitch every second, on a loop. That
+// reads as the camera intermittently lagging out, and it is worse than simply
+// running a little under target. Rare and decisive beats frequent and small.
+const DYNRES_COOLDOWN = 3.0;
 
 const DIFFICULTY_SKILL = {
   recruit: [0.18, 0.38],
@@ -969,6 +974,9 @@ export class Game {
       this.audio.setVolumes({ master: Settings.data.masterVolume });
     }
     const cp = this.graph.compositePass.uniforms;
+    // Supersampled levels resolve more real detail, so they can carry more
+    // sharpening without it turning into ringing on edges.
+    cp.uSharpen.value = this.quality.sharpen ?? 0.32;
     cp.uGrain.value = Settings.data.filmGrain;
     cp.uChromatic.value = Settings.data.chromaticAberration;
     cp.uVignette.value = Settings.data.vignette;

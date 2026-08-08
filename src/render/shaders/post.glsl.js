@@ -247,7 +247,13 @@ void main(){
   float velLen = length(vel / uTexelSize);
   float blend = uBlend;
   blend *= 1.0 - clamp(reactive, 0.0, 1.0);              // particles/flash keep the current frame
-  blend *= 1.0 - clamp(velLen * 0.012, 0.0, 0.6);         // fast pixels trust history less
+  // Fast pixels trust history less — and a flick has to be able to drop it
+  // almost entirely. This capped at 0.6, so whipping the view left and right
+  // still mixed 36% of a stale frame into every pixel, and the whole image
+  // dragged behind the turn. That reads as the camera lagging rather than as
+  // antialiasing. A turn moves hundreds of pixels per frame, so the ramp is
+  // steeper too: by ~35px/frame the history is essentially gone.
+  blend *= 1.0 - clamp(velLen * 0.028, 0.0, 0.97);
   blend *= 1.0 - clamp(clipAmount * 2.2, 0.0, 0.75);      // disocclusion
 
   vec3 result = mix(rgb2ycocg(cur.rgb), clipped, blend);

@@ -1,4 +1,4 @@
-import { Settings, QUALITY_PRESETS } from '../core/Settings.js';
+import { Settings, QUALITY_LEVELS } from '../core/Settings.js';
 
 /**
  * Start screen, pause menu, settings and the end-of-match board.
@@ -167,14 +167,18 @@ export class Menu {
     body.innerHTML = '';
 
     body.appendChild(this._group('Display', [
-      this._segment('Quality preset', Object.keys(QUALITY_PRESETS), Settings.data.quality,
-        (v) => this._set('quality', v)),
+      this._slider('Quality', 1, 10, 1, Settings.qualityLevel,
+        (v) => this._set('quality', v),
+        (v) => `${v}${v === 4 ? ' (ultra)' : ''}${v >= 5 ? ` · ${QUALITY_LEVELS[v - 1].renderScale}x` : ''}`),
       this._slider('Field of view', 70, 110, 1, Settings.data.fov,
         (v) => this._set('fov', v), (v) => `${v}°`),
       this._slider('Viewmodel FOV', 50, 80, 1, Settings.data.viewmodelFov,
         (v) => this._set('viewmodelFov', v), (v) => `${v}°`),
       this._toggle('Dynamic resolution', Settings.data.dynamicResolution,
-        (v) => this._set('dynamicResolution', v)),
+        (v) => this._set('dynamicResolution', v),
+        'Trades resolution to hold the frame rate. Each change costs one '
+        + 'aliased frame, so turn it off if you would rather have a stable '
+        + 'image than a stable frame time.'),
       this._toggle('Show performance', Settings.data.showFps,
         (v) => this._set('showFps', v))
     ]));

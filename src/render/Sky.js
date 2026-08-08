@@ -20,10 +20,15 @@ const CAPTURE_H = 32;
  * low enough to read as golden hour and high enough to shadow cleanly.
  */
 export const TIME_OF_DAY = {
-  dawn:    { azimuth: 74,  elevation: 6.5, intensity: 8.5,  turbidity: 4.4, clouds: 0.58, tint: [1.0, 0.80, 0.60], ev: -0.30 },
-  morning: { azimuth: 96,  elevation: 28,  intensity: 16.0, turbidity: 3.2, clouds: 0.50, tint: [1.0, 0.94, 0.86], ev: -0.05 },
+  // The EV biases are large on purpose. Dimming the sun alone does nothing
+  // visible, because auto-exposure keys the frame average to a target and
+  // simply opens up by however much the sun was dimmed — dawn and sunset came
+  // out as bright as noon with a warm tint, which is not what either looks
+  // like. Golden hour is genuinely darker than midday, not just oranger.
+  dawn:    { azimuth: 74,  elevation: 6.5, intensity: 8.5,  turbidity: 4.4, clouds: 0.58, tint: [1.0, 0.80, 0.60], ev: -1.25 },
+  morning: { azimuth: 96,  elevation: 28,  intensity: 16.0, turbidity: 3.2, clouds: 0.50, tint: [1.0, 0.94, 0.86], ev: -0.45 },
   day:     { azimuth: 116, elevation: 57,  intensity: 21.0, turbidity: 2.6, clouds: 0.52, tint: [1.0, 1.00, 1.00], ev: 0 },
-  sunset:  { azimuth: 252, elevation: 7.0, intensity: 9.5,  turbidity: 5.2, clouds: 0.62, tint: [1.0, 0.72, 0.46], ev: -0.35 },
+  sunset:  { azimuth: 252, elevation: 7.0, intensity: 9.5,  turbidity: 5.2, clouds: 0.62, tint: [1.0, 0.72, 0.46], ev: -1.35 },
   // Night needs a large negative bias or it does not exist. Auto-exposure
   // keys the average of the frame to a fixed target, so dimming the sun by
   // twenty-five times just makes the meter open up by twenty-five times and
