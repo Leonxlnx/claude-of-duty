@@ -152,19 +152,26 @@ so received no bounce, leaving shaded ground under pure Rayleigh sky — the
 alley floor came out **teal**. Sky irradiance is now pulled 40% toward its own
 luminance with a slight warm bias.
 
-## Round 8 — candidates
+## Round 8 — exposure (done)
 
-**Both critics named the same single biggest change, and it is still open:
-exposure and tonemap.** Measured, sunlit sand sits at ~118–129 sRGB (middle
-grey) and the 99th-percentile luminance of a whole frame is 183–196 — nothing
-in any shot is white, there is no highlight anywhere, while deep shade crushes
-to ~24–30. Real midday sun-to-open-shade is 5–8:1; parts of these frames are at
-55:1. The fix is a tonemap shoulder that lets sunlit plaster roll off toward
-245–252 plus enough ambient that open shade lands at luminance 70–90 rather
-than near-black. Everything else is amplified by this: materials look flat
-partly because no raking highlight ever forms on them.
+The change both critics named, and the tonemapper was not the cause: AgX
+already has the shoulder. The **metering** keyed the average frame luminance to
+18% grey, and in a sunlit desert street the average *is* the sunlit ground, so
+the sand was mapped to middle grey by construction.
 
-Then, in the critics' order:
+Keyed at 0.38 after measuring three candidates with `exposure-probe.js`:
+
+| | round 7 | key 0.38 | key 0.46 |
+|---|---|---|---|
+| sunlit ground | 118 | **141** | 150 |
+| 99th percentile | 196 | **209** | 217 |
+| frame below lum 40 | ~15% | **0.5%** | 0.1% |
+
+0.46 hits the critics' stated target and overshoots in the frame — the sky goes
+milky and the shade under the awnings loses its density. Judged on the pixels,
+not only the numbers, which is the whole method.
+
+## Round 9 — candidates, in the critics' order
 - Walls have no relief — no normal map at mid scale, so a raking sun produces
   nothing. Same blob frequency at 2 m and at 40 m.
 - The viewmodel is an untextured blockout in the strongest read position of
@@ -175,6 +182,19 @@ Then, in the critics' order:
   darkening decal.
 - Both wide shots dead-end in a blank slab exactly where the composition funnels
   the eye. Needs a focal object — minaret, arched gate, wreck.
+
+**Method notes earned the hard way, for whoever runs the next round:**
+
+- Verify every critic finding against the pixels before building. Two rounds
+  running, a confident, measurement-backed finding was a misdiagnosis
+  ("no parapets or roof furniture" — both existed; "AO multiplies the direct
+  term" — it does not, see `COMBINE_FRAG` line 36).
+- Build and run the smoke test *before* believing a capture. A shader that
+  fails to link still renders a plausible-looking screenshot.
+- Check the framing rig before blaming the art. Three separate staging bugs —
+  subject facing away, framings measured off the world axes so everything was
+  backlit, wall-clock settling too short to clear motion blur — each made the
+  work look worse than it was.
 
 - The flat blue-grey barrier slabs in the street still have no material
   identity — they could be plastic, metal or stone.
