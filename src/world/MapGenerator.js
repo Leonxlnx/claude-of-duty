@@ -385,23 +385,49 @@ export class MapGenerator {
         cover.push({ x: stall.x, z: stall.z, type: 'stall', height: 1.0 });
         z += gap;
       }
-      // overhead canopy spanning between the stall line and the facade
-      for (let cz = laneZ0; cz < laneZ1; cz += rng.range(4.5, 7.0)) {
+      // Overhead canopy spanning between the stall line and the facade.
+      //
+      // These used to be a row of identical quads at exactly 3.25m on
+      // identical posts — a stamped pattern rather than cloth, and high enough
+      // above the counters that the band between the two read as a hollow
+      // void on stilts. Height, span, sag and post material all vary per bay
+      // now, and the canopies hang lower, so the shade actually belongs to the
+      // stall underneath it.
+      for (let cz = laneZ0; cz < laneZ1; cz += rng.range(4.0, 6.2)) {
+        const h = rng.range(2.45, 2.95);
+        const cx = sign * rng.range(7.8, 8.6);
         cloth.push({
           type: 'awning',
-          center: new THREE.Vector3(sign * 8.2, groundHeightAt(sign * 8.2, cz) + 3.25, cz),
-          width: 3.6, depth: rng.range(3.0, 5.0), rotY: 0,
-          sag: rng.range(0.1, 0.24),
+          center: new THREE.Vector3(cx, groundHeightAt(cx, cz) + h, cz),
+          width: rng.range(3.0, 4.2), depth: rng.range(2.6, 5.2),
+          rotY: rng.range(-0.09, 0.09),
+          sag: rng.range(0.22, 0.46),
           tint: rng.pick(Props.PROP_TINTS.FABRIC_TINTS),
-          amplitude: rng.range(0.03, 0.07), phase: rng.range(0, 6.28)
+          amplitude: rng.range(0.03, 0.09), phase: rng.range(0, 6.28)
         });
-        // support posts
+        // Support posts: mixed timber and bent conduit, leaning a little.
         for (const s of [-1, 1]) {
-          const px = sign * 9.6;
-          const pz = cz + s * 1.6;
-          props.addBox(px, groundHeightAt(px, pz) + 1.6, pz, 0.09, 3.2, 0.09, {
-            layer: LAYER.METAL_PAINTED, tint: [0.5, 0.5, 0.48], wear: 0.8, uvScale: 2,
-            collide: true, surface: SURFACE.METAL
+          const timber = rng.bool(0.45);
+          const px = sign * rng.range(9.3, 9.9);
+          const pz = cz + s * rng.range(1.3, 1.9);
+          const ph = h + rng.range(-0.12, 0.1);
+          props.addBox(px, groundHeightAt(px, pz) + ph * 0.5, pz,
+            timber ? 0.11 : 0.075, ph, timber ? 0.11 : 0.075, {
+              rotY: rng.range(-0.05, 0.05),
+              layer: timber ? LAYER.WOOD : LAYER.METAL_PAINTED,
+              tint: timber ? [0.62, 0.5, 0.36] : [0.5, 0.5, 0.48],
+              wear: rng.range(0.7, 0.95), uvScale: 2,
+              collide: true, surface: timber ? SURFACE.WOOD : SURFACE.METAL
+            });
+        }
+        // A guy line back to the facade, so the canopy is tied to something.
+        if (rng.bool(0.6)) {
+          cables.push({
+            a: new THREE.Vector3(sign * 9.6, groundHeightAt(sign * 9.6, cz) + h, cz),
+            b: new THREE.Vector3(sign * 10.2, groundHeightAt(sign * 10.2, cz) + h + rng.range(0.8, 1.6), cz + rng.range(-0.5, 0.5)),
+            sag: rng.range(0.02, 0.08),
+            amplitude: rng.range(0.004, 0.012), phase: rng.range(0, 6.28),
+            radius: rng.range(0.008, 0.014)
           });
         }
       }

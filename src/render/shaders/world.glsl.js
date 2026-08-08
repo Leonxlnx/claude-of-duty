@@ -198,6 +198,21 @@ SurfaceOut shadeSurface(vec3 worldPos, vec3 N, vec3 V, vec3 albedo, float rough,
   // --- sky / bounce ambient
   vec3 irr = shIrradiance(N);
   vec3 ambient = diffuseAlbedo * irr * ao;
+
+  // --- warm bounce off the ground
+  //
+  // A sunlit sand street throws a great deal of light back up, and it is the
+  // colour of the sand. With sky irradiance as the only fill, everything in
+  // shadow instead took the sky's blue whole — which is why pale concrete
+  // barriers read as flat blue-grey slabs with no material identity at all,
+  // and why the shaded sides of every building sat cold against a warm scene.
+  // Strongest on downward-facing surfaces and near the ground, gone by the
+  // time it reaches a roofline.
+  float downward = clamp(0.5 - N.y * 0.5, 0.0, 1.0);
+  float nearGround = 1.0 - smoothstep(0.0, 7.0, worldPos.y);
+  vec3 bounce = vec3(0.62, 0.50, 0.33) * uSunColor * 0.20
+    * downward * (0.30 + nearGround * 0.70);
+  ambient += diffuseAlbedo * bounce * ao;
   vec3 R = reflect(-V, N);
   vec3 envSpec = skyProbe(normalize(mix(R, N, rough*rough*0.75)));
   float horizonFade = clamp(1.0 + dot(R, N), 0.0, 1.0);
@@ -399,8 +414,41 @@ void main(){
   float wear = clamp(vWear * (0.4 + macro * 1.2), 0.0, 1.0);
   albedo = mix(albedo, albedo * 0.72, wear * 0.4);
 
-  float rough = clamp(orm.g * (0.9 + wear * 0.25) + dustMask * 0.16, 0.04, 1.0);
-  float metal = orm.b * (1.0 - dustMask * 0.5);
+  // ---- weathering on vertical surfaces
+  //
+  // Every wall in the district met every floor on a razor-clean line, and no
+  // facade carried a mark of any kind, so a street of them read as painted
+  // card however much geometry was on it. Both are the same observation — real
+  // walls are dirtiest where water and feet reach them — and both are cheap
+  // here, because doing it in the shader weathers the whole map at once rather
+  // than one prop at a time.
+  float vertical = 1.0 - clamp(abs(vNormal.y) * 1.6, 0.0, 1.0);
+
+  // Splash zone: the district floor sits near y=0, so height above it is a
+  // good enough proxy for ground contact without sampling the terrain.
+  float splash = (1.0 - smoothstep(0.0, 0.85, vWorldPos.y)) * vertical;
+  splash *= 0.55 + macro2 * 0.7;
+  albedo = mix(albedo, vec3(0.118, 0.094, 0.070), clamp(splash * 0.45, 0.0, 0.55));
+
+  // Drip staining: vertical streaks that fade downward from wherever they
+  // start, so sills, balconies and parapets all trail runs beneath them
+  // without needing to know where any of them are.
+  float streakNoise = fbm(vec2(vWorldPos.x + vWorldPos.z, vWorldPos.y * 0.06) * 2.4, 3, 0.55);
+  float streak = smoothstep(0.62, 0.95, streakNoise) * vertical;
+  streak *= smoothstep(0.0, 2.2, vWorldPos.y) * (0.35 + vWear * 0.8);
+  albedo = mix(albedo, albedo * vec3(0.62, 0.60, 0.56), clamp(streak * 0.5, 0.0, 0.5));
+
+  // Blown render: patches where the plaster has come off, exposing a coarser,
+  // greyer substrate. Sparse on purpose — this is an accent, not a texture.
+  // (Not named "patch": that is a reserved word in GLSL and compiles nowhere.)
+  float blown = smoothstep(0.74, 0.86, fbm(vWorldPos.xz * 0.32 + vWorldPos.y * 0.28 + 7.0, 3, 0.5));
+  blown *= vertical * vWear;
+  albedo = mix(albedo, vec3(0.40, 0.385, 0.355), clamp(blown * 0.6, 0.0, 0.6));
+
+  // Dirt and exposed substrate are rougher than the render they sit on.
+  float rough = clamp(orm.g * (0.9 + wear * 0.25) + dustMask * 0.16
+    + splash * 0.22 + blown * 0.25, 0.04, 1.0);
+  float metal = orm.b * (1.0 - dustMask * 0.5) * (1.0 - clamp(splash, 0.0, 1.0) * 0.6);
   float ao = orm.r;
 
   vec3 mapN = nrm.xyz * 2.0 - 1.0;
