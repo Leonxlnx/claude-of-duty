@@ -171,7 +171,19 @@ Keyed at 0.38 after measuring three candidates with `exposure-probe.js`:
 milky and the shade under the awnings loses its density. Judged on the pixels,
 not only the numbers, which is the whole method.
 
-## Round 9 — candidates, in the critics' order
+## Round 9 — player-reported (done)
+
+Motion blur tamed; times of day (dawn/morning/day/sunset/night) as whole
+lighting states with their own EV bias; hit registration fixed; blood rebuilt
+as three populations; explosion given a shockwave crack, a sub and debris; AI
+difficulty wired to tactics rather than only to aim; weapon palette separated
+into steel/polymer/FDE.
+
+Still open on the weapon: a pale cylinder remains at the stock end (visible
+bottom-right in `shots/gun/round2.png`) and the hands have no AO where they
+meet the grip. The critics' full weapon note is in round 5-7 above.
+
+## Round 10 — candidates, in the critics' order
 - Walls have no relief — no normal map at mid scale, so a raking sun produces
   nothing. Same blob frequency at 2 m and at 40 m.
 - The viewmodel is an untextured blockout in the strongest read position of

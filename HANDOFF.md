@@ -184,6 +184,33 @@ match they cannot leave.
 Escape hatches for the player, in order of certainty:
 `tools/unstick-cursor.cmd` → Ctrl+Alt+Del then Escape → Alt+Tab.
 
+## Bugs found by playing, and what they turned out to be
+
+Worth reading before chasing a "feel" complaint — three of these were real
+defects wearing a subjective costume.
+
+- **"Shots should clearly be there."** `_raycastCharacters` early-rejects
+  against a bounding sphere centred on `character.position` — the rig root, on
+  the ground — with a fixed 1.15 m radius. A standing body is 1.8 m tall, so a
+  level shot at chest or head height passes ~1.3 m from that centre and was
+  discarded before any capsule was tested. Nine rounds down the eye-to-chest
+  line took a target from 100 health to 100. The sphere is now derived from the
+  hitboxes it bounds. `PlayerTarget` was always correct, which is why the AI
+  could hit the player but not the reverse.
+- **"Walking is laggy, turning fast bugs."** Not framerate — measured flat at
+  16.7 ms with no jitter (`tools/snippets/walk-profile.js`). It was motion
+  blur: `MAX_BLUR` at 42 px of streak, and a shutter rescale that *amplified*
+  above 60 fps (2.4x at 144 Hz), so the better the monitor the worse the smear.
+- **Night looked like an overcast day.** Auto-exposure keys the average frame
+  luminance to a target, so dimming the sun 25x made the meter open 25x and
+  hand back the same picture. Needs an EV bias *and* the clamp window moved
+  with it — `uMinEV` is a ceiling on how far the meter may open, and night was
+  hitting it and spending the whole bias.
+
+**Method note:** every one of these was found by measuring, not by looking. A
+probe that prints numbers (`walk-profile`, `exposure-probe`, `aim-check`,
+`tod-check`) settled in one run what staring at screenshots could not.
+
 ## Open work, in priority order
 
 1. **Environment round 5.** Round 4 stocked the market, lifted the roof
