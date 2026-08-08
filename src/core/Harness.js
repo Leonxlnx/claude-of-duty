@@ -69,13 +69,21 @@ export function installHarness(game) {
       return { yaw: game.player.yaw, pitch: game.player.pitch };
     },
 
-    /** Aim at the closest living enemy the player can actually see. */
+    /**
+     * Aim at the closest living enemy the player can actually see.
+     *
+     * At the chest joint, not at `character.position` — that is the root, and
+     * it sits on the ground, so the old `position.y + 0.15` put the reticle at
+     * ankle height and left every shot depending on spread to catch a leg.
+     * Tests that fired at an enemy and asserted damage were really measuring
+     * luck, which is what made them flaky under load.
+     */
     aimAtEnemy() {
       const target = api.nearestEnemy();
       if (!target) return null;
-      const p = target.position;
-      api.aimAt(p.x, p.y + 0.15, p.z);
-      return { name: target.name, distance: game.player.eye.distanceTo(p) };
+      const chest = target.rig?.joints?.[2] ?? target.position;   // RD.CHEST
+      api.aimAt(chest.x, chest.y, chest.z);
+      return { name: target.name, distance: game.player.eye.distanceTo(chest) };
     },
 
     nearestEnemy() {

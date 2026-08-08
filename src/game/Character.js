@@ -46,6 +46,8 @@ export class Character {
     this.maxHealth = 100;
     this.position = new THREE.Vector3();
     this.velocity = new THREE.Vector3();
+    /** Centre of the broad-phase sphere; the body, not the feet. */
+    this.boundsCenter = new THREE.Vector3();
     this.yaw = 0;
     this.pitch = 0;
     this.stance = 'stand';
@@ -199,8 +201,27 @@ export class Character {
         if (_dir.lengthSq() > 1e-8) hb.b.addScaledVector(_dir.normalize(), hb.def.extend);
       }
     }
-    // bounding sphere follows the pelvis so the broad-phase stays tight
-    this.boundsRadius = this.alive ? 1.15 : 1.0;
+
+    // Bounding sphere for the broad phase, derived from the hitboxes it is
+    // meant to bound.
+    //
+    // It used to be a fixed 1.15m radius centred on `position` — which is the
+    // root, on the ground. A standing soldier is 1.8m tall, so a level shot at
+    // chest or head height passes about 1.3m from that centre and was rejected
+    // before a single capsule was tested. Torso and head shots were being
+    // discarded by the cheap early-out; what still connected were rounds that
+    // spread low enough to pass near the feet. Centring it on the body and
+    // sizing it to reach every capsule end is the whole fix.
+    _min.set(Infinity, Infinity, Infinity);
+    _max.set(-Infinity, -Infinity, -Infinity);
+    for (const hb of this.hitboxes) {
+      _min.min(hb.a).min(hb.b);
+      _max.max(hb.a).max(hb.b);
+    }
+    this.boundsCenter.addVectors(_min, _max).multiplyScalar(0.5);
+    // Half the diagonal reaches every endpoint; the fattest capsule radius
+    // covers the flesh hanging off them.
+    this.boundsRadius = _max.distanceTo(_min) * 0.5 + 0.21;
   }
 
   /** Eye position used by AI line-of-sight and by the audio listener. */
@@ -223,4 +244,6 @@ const _impulse = new THREE.Vector3();
 const _rayOrigin = new THREE.Vector3();
 const _down = new THREE.Vector3(0, -1, 0);
 const _dir = new THREE.Vector3();
+const _min = new THREE.Vector3();
+const _max = new THREE.Vector3();
 const _groundHit = new RayHit();

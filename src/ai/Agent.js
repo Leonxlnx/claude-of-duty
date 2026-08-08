@@ -391,14 +391,31 @@ export class Agent {
           this._setState(AI_STATE.ADVANCE);
           break;
         }
-        if (this.character.health < 40 && this.rng.next() < dt * 0.9) {
+        // Self-preservation scales with skill. A recruit trades in the open
+        // until it is nearly dead; an elite breaks contact while it still has
+        // the health to survive the move. This is most of what separates the
+        // difficulties in play — before, every setting fought identically and
+        // only shot straighter, so "harder" read as "luckier".
+        const breakOff = 26 + this.skill * 34;
+        if (this.character.health < breakOff && this.rng.next() < dt * (0.5 + this.skill * 1.1)) {
+          this._setState(AI_STATE.SEEK_COVER);
+          break;
+        }
+        // Being shot at without being hit is also a reason to move. Standing
+        // in the open through incoming fire is the single most obviously
+        // stupid thing an agent can do, and only skilled ones avoided it.
+        if (this.stress > 0.55 && !this.hasCover
+            && this.rng.next() < dt * this.stress * (0.6 + this.skill * 1.4)) {
           this._setState(AI_STATE.SEEK_COVER);
           break;
         }
         // Close in if too far to be effective, back off if uncomfortably close.
         if (dist > 42 && this.stateTime > 1.2) { this._setState(AI_STATE.ADVANCE); break; }
 
-        this.stance = this.hasCover && dist > 12 ? 'crouch' : 'stand';
+        // Skilled agents fight small: they crouch behind whatever they have,
+        // and from further out. A recruit stands up in cover and wastes it.
+        const crouchRange = 6 + this.skill * 14;
+        this.stance = this.hasCover && dist > crouchRange ? 'crouch' : 'stand';
         this._combatStrafe(dt);
         break;
       }

@@ -168,7 +168,9 @@ export class AudioEngine {
       ['shotDistant', 0.9, (ctx) => this._buildDistantShot(ctx)],
       ['tail', 1.5, (ctx) => this._buildTail(ctx)],
       ['supersonic', 0.16, (ctx) => this._buildCrack(ctx)],
-      ['explosion', 2.0, (ctx) => this._buildExplosion(ctx)],
+      // 2.6s, because the debris scatter and the rumble now run past 2.0 and
+      // an offline render is simply truncated at the buffer length.
+      ['explosion', 2.6, (ctx) => this._buildExplosion(ctx)],
       ['grenadePin', 0.2, (ctx) => this._buildPin(ctx)],
       ['casing', 0.55, (ctx) => this._buildCasing(ctx)],
       ['magOut', 0.35, (ctx) => this._buildMagOut(ctx)],
@@ -339,30 +341,68 @@ export class AudioEngine {
   _buildExplosion(ctx) {
     const out = ctx.destination;
 
+    // 1. Shockwave crack. Bright, brutal, two milliseconds of attack. The old
+    // version had no front edge at all — its brightest component started at a
+    // 4.2kHz lowpass, so a detonation ten metres away read as a distant thud.
+    const crack = this._noise(ctx, 0.14, 0.85);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(1800, 0);
+    hp.frequency.exponentialRampToValueAtTime(600, 0.12);
+    crack.connect(hp);
+    this._env(ctx, hp, 0, 0.9, 0.0015, 0.11).connect(out);
+    crack.start(0);
+
+    // 2. The punch, plus a second oscillator an octave under it so there is
+    // something below the pitch rather than only at it.
     const thump = ctx.createOscillator();
     thump.type = 'sine';
-    thump.frequency.setValueAtTime(120, 0);
-    thump.frequency.exponentialRampToValueAtTime(28, 0.42);
-    this._env(ctx, thump, 0, 1.0, 0.002, 0.55).connect(out);
-    thump.start(0); thump.stop(0.7);
+    thump.frequency.setValueAtTime(155, 0);
+    thump.frequency.exponentialRampToValueAtTime(24, 0.55);
+    this._env(ctx, thump, 0, 1.0, 0.003, 0.75).connect(out);
+    thump.start(0); thump.stop(0.9);
 
-    const blast = this._noise(ctx, 0.9, -0.2);
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(64, 0);
+    sub.frequency.exponentialRampToValueAtTime(19, 0.7);
+    this._env(ctx, sub, 0.004, 0.72, 0.01, 0.95).connect(out);
+    sub.start(0); sub.stop(1.1);
+
+    // 3. Blast body, opening far brighter than before.
+    const blast = this._noise(ctx, 1.1, -0.1);
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.setValueAtTime(4200, 0);
-    lp.frequency.exponentialRampToValueAtTime(380, 0.6);
+    lp.frequency.setValueAtTime(9000, 0);
+    lp.frequency.exponentialRampToValueAtTime(300, 0.75);
     blast.connect(lp);
-    this._env(ctx, lp, 0.001, 0.85, 0.006, 0.65).connect(out);
+    this._env(ctx, lp, 0.001, 0.85, 0.004, 0.8).connect(out);
     blast.start(0);
 
-    const tail = this._noise(ctx, 1.8, -0.5);
+    // 4. Debris landing over the following second, deliberately uneven —
+    // evenly spaced ticks read as a machine rather than as falling masonry.
+    for (let i = 0; i < 9; i++) {
+      const t = 0.09 + Math.pow(Math.random(), 1.7) * 1.05;
+      const piece = this._noise(ctx, 0.09, 0.4);
+      const bpf = ctx.createBiquadFilter();
+      bpf.type = 'bandpass';
+      bpf.frequency.value = 900 + Math.random() * 3400;
+      bpf.Q.value = 1.6 + Math.random() * 2.5;
+      piece.connect(bpf);
+      this._env(ctx, bpf, t, 0.09 + Math.random() * 0.13, 0.001, 0.05 + Math.random() * 0.07)
+        .connect(out);
+      piece.start(0);
+    }
+
+    // 5. The rumble that outlives all of it.
+    const tail = this._noise(ctx, 2.2, -0.55);
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
-    bp.frequency.setValueAtTime(520, 0);
-    bp.frequency.exponentialRampToValueAtTime(150, 1.6);
-    bp.Q.value = 0.4;
+    bp.frequency.setValueAtTime(430, 0);
+    bp.frequency.exponentialRampToValueAtTime(110, 2.0);
+    bp.Q.value = 0.35;
     tail.connect(bp);
-    this._env(ctx, bp, 0.05, 0.34, 0.12, 1.7).connect(out);
+    this._env(ctx, bp, 0.04, 0.40, 0.10, 2.1).connect(out);
     tail.start(0);
   }
 
@@ -879,8 +919,12 @@ export class AudioEngine {
 
   playExplosion(position) {
     if (!this.ready) return;
-    this.play('explosion', position || null, { gain: 1.0, reverb: 1 });
-    this.play('tail', null, { gain: 0.55, delay: 0.08, rate: 0.7 });
+    // A little rate variation so a string of grenades does not read as the
+    // same sample nine times.
+    this.play('explosion', position || null, {
+      gain: 1.0, reverb: 1, rate: 0.92 + Math.random() * 0.16
+    });
+    this.play('tail', null, { gain: 0.55, delay: 0.08, rate: 0.62 + Math.random() * 0.14 });
   }
 
   playGrenadePin() { this.play('grenadePin', null, { gain: 0.5 }); }

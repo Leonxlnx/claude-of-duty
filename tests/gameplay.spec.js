@@ -701,6 +701,60 @@ test.describe('gunplay', () => {
     expect(after.damaged || after.score > before.score).toBe(true);
   });
 
+  /**
+   * A round aimed at the chest hits the chest.
+   *
+   * The broad-phase sphere used to be centred on `character.position`, which
+   * is the root and sits on the ground, with a fixed 1.15m radius. A standing
+   * body is 1.8m tall, so a level shot at chest or head height passes about
+   * 1.3m from that centre and was rejected before any capsule was tested —
+   * torso and head shots were being thrown away by the cheap early-out, and
+   * what still connected were rounds that spread low enough to pass near the
+   * feet. Nothing caught it because every existing test aimed via
+   * `aimAtEnemy`, which aimed at the ankles.
+   *
+   * This fires one round straight down the eye-to-chest line, which is the
+   * shot that used to be discarded.
+   */
+  test('a round aimed at the chest registers on the chest', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 1500);
+
+    const run = await page.evaluate(async () => {
+      const g = window.__game, h = window.__harness;
+      g.player.spawnProtect = 1e9;
+      if (!h.engageNearestEnemy(9)) return null;
+      h.freezeAI(true);
+      await h.wait(0.3);
+
+      const target = h.nearestEnemy();
+      const chest = target.rig.joints[2];   // RD.CHEST
+      const Vec = g.player.eye.constructor;
+      const dir = new Vec().subVectors(chest, g.player.eye).normalize();
+
+      // Straight into Combat, so weapon spread and recoil cannot be what makes
+      // this pass or fail.
+      const before = target.health;
+      g.combat.fireBullet({
+        origin: g.player.eye.clone(), direction: dir,
+        owner: g.playerTarget, damage: 34, firstPerson: true
+      });
+      await h.wait(0.1);
+      return {
+        chestY: chest.y, rootY: target.position.y,
+        boundsRadius: target.boundsRadius,
+        boundsCenterY: target.boundsCenter?.y ?? null,
+        damage: before - target.health
+      };
+    });
+
+    test.skip(run === null, 'no reachable enemy');
+    // The sphere has to contain the body it bounds.
+    expect(run.boundsCenterY, 'bounds are centred on the feet').toBeGreaterThan(run.rootY + 0.5);
+    expect(run.boundsCenterY + run.boundsRadius).toBeGreaterThan(run.chestY);
+    expect(run.damage, 'a round on the eye-to-chest line did nothing').toBeGreaterThan(0);
+  });
+
   test('killing an enemy scores a point and feeds the killfeed', async ({ page }) => {
     await boot(page, '?auto=1');
     await settle(page, 1500);

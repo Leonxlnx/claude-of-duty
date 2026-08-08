@@ -283,8 +283,11 @@ export class Combat {
     for (const c of this.characters) {
       if (!c.alive || c === exclude || c.hitboxes === undefined) continue;
       if (c.boundsRadius !== undefined) {
-        // quick reject against the bounding sphere before touching the parts
-        _to.subVectors(c.position, origin);
+        // Quick reject against the bounding sphere before touching the parts.
+        // Against `boundsCenter`, not `position`: the latter is the root, on
+        // the ground, and a sphere centred there does not contain the chest or
+        // the head of a standing body.
+        _to.subVectors(c.boundsCenter ?? c.position, origin);
         const proj = _to.dot(dir);
         if (proj < -c.boundsRadius || proj > maxDist + c.boundsRadius) continue;
         const perp2 = _to.lengthSq() - proj * proj;
@@ -457,34 +460,84 @@ export class Combat {
     }
   }
 
+  /**
+   * A round entering a body.
+   *
+   * Three populations rather than one, because they behave nothing alike and a
+   * single cloud of identical droplets is what makes a hit read as a particle
+   * effect. Atomised mist hangs and catches the light, heavy droplets fly
+   * ballistically and mark whatever they land on, and a spray follows the
+   * round's line. Each is a different size, lifetime and drag; the colour is
+   * jittered per particle because a uniform red is the other half of the tell.
+   */
   _bloodImpact(point, dir, zone) {
     const density = this.quality.particleDensity;
-    const n = Math.round((zone === 'head' ? 16 : 9) * density);
-    for (let i = 0; i < n; i++) {
-      _v.copy(dir).multiplyScalar(1.6 + this.rng.next() * 4.5);
-      _v.x += (this.rng.next() - 0.5) * 2.6;
-      _v.y += (this.rng.next() - 0.5) * 2.2 + 0.6;
-      _v.z += (this.rng.next() - 0.5) * 2.6;
+    const head = zone === 'head';
+    const force = head ? 1.55 : zone === 'limb' ? 0.72 : 1.0;
+
+    // --- atomised mist: the part that reads at distance, and it hangs
+    const mist = Math.round((head ? 9 : 5) * density);
+    for (let i = 0; i < mist; i++) {
+      _v.copy(dir).multiplyScalar((0.8 + this.rng.next() * 2.2) * force);
+      _v.x += (this.rng.next() - 0.5) * 1.5;
+      _v.y += (this.rng.next() - 0.5) * 1.2 + 0.35;
+      _v.z += (this.rng.next() - 0.5) * 1.5;
+      const k = 0.85 + this.rng.next() * 0.45;
       this.particles.spawn({
         position: point, velocity: _v, kind: PKIND.BLOOD,
-        size: 0.022 + this.rng.next() * 0.05,
-        color: [0.36, 0.028, 0.022], alpha: 0.9,
-        life: 0.4 + this.rng.next() * 0.5, drag: 2.2, gravity: 9,
-        growth: 1.2, fade: 1
+        size: (0.045 + this.rng.next() * 0.09) * force,
+        color: [0.42 * k, 0.055 * k, 0.04 * k],
+        alpha: 0.30 + this.rng.next() * 0.22,
+        life: 0.55 + this.rng.next() * 0.7,
+        drag: 5.2, gravity: 1.1, growth: 3.2, fade: 1
       });
     }
-    // mist puff behind the hit
-    this.particles.spawn({
-      position: point, velocity: _v.copy(dir).multiplyScalar(1.2),
-      kind: PKIND.BLOOD, size: 0.13, color: [0.30, 0.03, 0.025], alpha: 0.5,
-      life: 0.34, drag: 3.5, gravity: 1.5, growth: 2.6, fade: 1
-    });
-    // splatter on whatever is behind them
-    const h = this.bvh.raycast(point, dir, 3.2, _exitHit);
-    if (h.hit) {
-      this.decals.add(h.point, h.normal, DECAL.BLOOD, 0.32 + this.rng.next() * 0.4, {
-        seed: this.rng.next(), life: 26
+
+    // --- heavy droplets: ballistic, and they mark where they land
+    // Budgeted, not maximal. Tripling the particle count per hit is visible
+    // in a frame profile long before it is visible on screen: the perf test
+    // caught it, and the extra droplets bought almost nothing over these.
+    const drops = Math.round((head ? 11 : 7) * density);
+    for (let i = 0; i < drops; i++) {
+      _v.copy(dir).multiplyScalar((2.2 + this.rng.next() * 5.0) * force);
+      _v.x += (this.rng.next() - 0.5) * 3.0;
+      _v.y += (this.rng.next() - 0.5) * 2.4 + 0.9;
+      _v.z += (this.rng.next() - 0.5) * 3.0;
+      const k = 0.8 + this.rng.next() * 0.5;
+      this.particles.spawn({
+        position: point, velocity: _v, kind: PKIND.BLOOD,
+        // A wide size range: mostly fine, occasionally a fat one. Uniform
+        // droplets are what make a spray look like a texture.
+        size: (0.012 + Math.pow(this.rng.next(), 3) * 0.075) * force,
+        color: [0.34 * k, 0.026 * k, 0.021 * k],
+        alpha: 0.95, life: 0.5 + this.rng.next() * 0.75,
+        drag: 1.4, gravity: 11.5, growth: 1.0, fade: 1
       });
+    }
+
+    // --- splatter on whatever was behind them, and a pool below
+    const behind = this.bvh.raycast(point, dir, 3.6, _exitHit);
+    if (behind.hit) {
+      this.decals.add(behind.point, behind.normal, DECAL.BLOOD,
+        (0.30 + this.rng.next() * 0.45) * force, { seed: this.rng.next(), life: 26 });
+      // A second, offset mark: one disc reads as a stamp, two read as a spray.
+      // Occasional rather than always — the decal ring is 384 deep and three
+      // marks per hit churn it three times as fast, so old blood vanishes
+      // mid-firefight.
+      if (head || this.rng.bool(0.3)) {
+        _v.copy(behind.point).addScaledVector(_up, this.rng.next() * 0.35 - 0.1);
+        this.decals.add(_v, behind.normal, DECAL.BLOOD,
+          (0.14 + this.rng.next() * 0.22) * force, { seed: this.rng.next(), life: 26 });
+      }
+    }
+    // Drips below the wound, some of the time. `raycast` fills and returns the
+    // hit object it is given, so the gate has to be on whether it runs at all.
+    if (this.rng.bool(0.45)) {
+      const below = this.bvh.raycast(point, _down, 2.6, _exitHit);
+      if (below.hit) {
+        this.decals.add(below.point, below.normal, DECAL.BLOOD,
+          (0.22 + this.rng.next() * 0.30) * force, { seed: this.rng.next(), life: 30 });
+      }
     }
   }
 
@@ -843,6 +896,8 @@ function distanceToSegment(point, a, b) {
   return point.distanceTo(_segClosest.copy(a).addScaledVector(_segAB, t));
 }
 
+const _up = new THREE.Vector3(0, 1, 0);
+const _down = new THREE.Vector3(0, -1, 0);
 const _segAB = new THREE.Vector3();
 const _segAP = new THREE.Vector3();
 const _segClosest = new THREE.Vector3();
