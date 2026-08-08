@@ -377,7 +377,12 @@ export class ViewModel {
     // it on screen — the world rotates around a weapon that stays put. A little
     // roll back the other way, plus a drift away from the lean, reads as the
     // shoulder trailing the head rather than the arms being welded to the view.
-    const lean = player.leanBlend;
+    //
+    // All of it faded out by aim: sights only work when the bore sits on the
+    // camera axis, and fourteen millimetres of shoulder drift is enough to
+    // push the whole optic window visibly off the crosshair while peeking.
+    // Cheek weld beats body language.
+    const lean = player.leanBlend * (1 - this.adsBlend);
     const leanX = -lean * 0.014;
     const leanRoll = lean * 0.062;
 

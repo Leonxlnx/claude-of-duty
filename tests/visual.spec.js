@@ -190,22 +190,38 @@ test('aiming down sights centres the optic and narrows the view', async ({ page 
   await page.evaluate(() => window.__harness.ads(true));
   await settle(page, 1200);
 
-  const ads = await page.evaluate(() => {
+  const reticleOnScreen = () => page.evaluate(() => {
     const g = window.__game;
     const world = g.viewModel.reticle.getWorldPosition(g.viewModel.muzzleWorld.clone());
     const p = world.project(g.vmCamera);
     return {
       blend: g.player.adsBlend,
+      lean: g.player.leanBlend,
       reticleX: (p.x + 1) / 2,
       reticleY: (1 - p.y) / 2
     };
   });
-  await page.evaluate(() => window.__harness.ads(false));
 
+  const ads = await reticleOnScreen();
   expect(ads.blend).toBeGreaterThan(0.85);
   // The sight window lands on the crosshair, which is what collimation means.
   expect(Math.abs(ads.reticleX - 0.5)).toBeLessThan(0.06);
   expect(Math.abs(ads.reticleY - 0.5)).toBeLessThan(0.08);
+
+  // Still true while peeking round a corner. The lean used to keep shoving the
+  // weapon sideways at full aim — body language that costs the sight picture —
+  // so aiming out of a Q or E peek put the optic visibly off the crosshair.
+  await page.evaluate(() => window.__harness.key('KeyE', true));
+  await settle(page, 900);
+  const leaning = await reticleOnScreen();
+  await page.evaluate(() => {
+    window.__harness.key('KeyE', false);
+    window.__harness.ads(false);
+  });
+
+  expect(Math.abs(leaning.lean)).toBeGreaterThan(0.25);
+  expect(Math.abs(leaning.reticleX - 0.5)).toBeLessThan(0.06);
+  expect(Math.abs(leaning.reticleY - 0.5)).toBeLessThan(0.08);
 });
 
 // Back faces are culled, so a primitive wound the wrong way round is simply

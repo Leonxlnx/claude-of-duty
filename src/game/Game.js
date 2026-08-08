@@ -212,7 +212,9 @@ export class Game {
     this.world = new World(this.factory).build(WORLD_SEED);
 
     await loading.step(0.50, 'Baking navigation');
-    this.nav = new NavGrid(this.world.bvh, this.world.bounds).bake();
+    this.nav = new NavGrid(this.world.bvh, this.world.bounds, {
+      buildings: this.world.buildings, playBounds: this.world.playBounds
+    }).bake();
 
     await loading.step(0.62, 'Painting surfaces');
     await materialsCompiled;

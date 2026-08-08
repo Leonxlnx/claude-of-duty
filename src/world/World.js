@@ -49,6 +49,8 @@ export class World {
     this.coverPoints = data.coverPoints;
     this.interiors = data.interiors;
     this.bounds = data.bounds;
+    this.buildings = data.buildings;
+    this.playBounds = data.playBounds;
 
     this.stats = {
       triangles: data.triangleCount,

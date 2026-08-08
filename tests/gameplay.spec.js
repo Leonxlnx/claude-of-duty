@@ -411,11 +411,16 @@ test.describe('respawn', () => {
       const g = window.__game;
       const Vec = g.player.eye.constructor;
       const up = new Vec(0, 1, 0);
-      // Asked of the collision world, not of the navmesh's own indoor flag.
-      // That flag was once computed by a test that no room could ever fail, so
-      // a check against it passed while redeploys landed in bedrooms.
-      const hasCeiling = (p) =>
-        g.world.bvh.raycast(new Vec(p.x, p.y + 1.2, p.z), up, 5.5).hit;
+      // Asked of the collision world and the generator's own footprints, not
+      // of the navmesh's indoor flag. That flag was once computed by a test no
+      // room could ever fail, so a check against it passed while redeploys
+      // landed in bedrooms.
+      const pb = g.world.playBounds;
+      const rejected = (p) =>
+        g.world.bvh.raycast(new Vec(p.x, p.y + 1.2, p.z), up, 5.5).hit
+        || g.world.buildings.some((b) =>
+          p.x > b.x0 - 0.4 && p.x < b.x1 + 0.4 && p.z > b.z0 - 0.4 && p.z < b.z1 + 0.4)
+        || p.x < pb.x0 || p.x > pb.x1 || p.z < pb.z0 || p.z > pb.z1;
 
       const picks = [];
       let indoorPicks = 0;
@@ -427,7 +432,7 @@ test.describe('respawn', () => {
           if (!c.alive || c.team === g.player.team) continue;
           nearest = Math.min(nearest, spot.distanceTo(c.position));
         }
-        if (hasCeiling(spot)) indoorPicks++;
+        if (rejected(spot)) indoorPicks++;
         picks.push({ x: spot.x, z: spot.z, nearest });
       }
       const cells = new Set(picks.map((p) => `${Math.round(p.x / 10)},${Math.round(p.z / 10)}`));
@@ -465,7 +470,12 @@ test.describe('respawn', () => {
       const g = window.__game;
       const Vec = g.player.eye.constructor;
       const up = new Vec(0, 1, 0);
-      const roofed = (p) => g.world.bvh.raycast(new Vec(p.x, p.y + 1.2, p.z), up, 5.5).hit;
+      const pb = g.world.playBounds;
+      const roofed = (p) =>
+        g.world.bvh.raycast(new Vec(p.x, p.y + 1.2, p.z), up, 5.5).hit
+        || g.world.buildings.some((b) =>
+          p.x > b.x0 - 0.4 && p.x < b.x1 + 0.4 && p.z > b.z0 - 0.4 && p.z < b.z1 + 0.4)
+        || p.x < pb.x0 || p.x > pb.x1 || p.z < pb.z0 || p.z > pb.z1;
 
       return {
         player: roofed(g.player.controller.position),

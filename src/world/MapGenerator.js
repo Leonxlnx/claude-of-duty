@@ -242,6 +242,12 @@ export class MapGenerator {
         new THREE.Vector3(-MAP.boundary, -2, MAP.zMin),
         new THREE.Vector3(MAP.boundary, 30, MAP.zMax)
       ),
+      // The match happens between the outer building rows. The strip behind
+      // them, up to the boundary wall, is walkable but not somewhere to start.
+      playBounds: {
+        x0: -MAP.outerRow.x1, x1: MAP.outerRow.x1,
+        z0: MAP.zMin + 2, z1: MAP.zMax - 2
+      },
       triangleCount: soup.count
     };
   }

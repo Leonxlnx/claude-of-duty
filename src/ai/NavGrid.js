@@ -50,13 +50,20 @@ const WALL_PROBES = (() => {
 })();
 
 export class NavGrid {
-  constructor(bvh, bounds) {
+  /**
+   * `buildings` are exact footprints from the generator; `playBounds` is the
+   * rectangle the match is meant to happen in. Both optional — the grid works
+   * from raycasts alone — but with them the indoor flag stops being a guess.
+   */
+  constructor(bvh, bounds, { buildings = [], playBounds = null } = {}) {
     this.bvh = bvh;
     this.min = new THREE.Vector2(bounds.min.x, bounds.min.z);
     this.max = new THREE.Vector2(bounds.max.x, bounds.max.z);
     this.cell = CELL;
     this.w = Math.ceil((this.max.x - this.min.x) / CELL);
     this.h = Math.ceil((this.max.y - this.min.y) / CELL);
+    this.buildings = buildings;
+    this.playBounds = playBounds;
     const n = this.w * this.h;
 
     this.walkable = new Uint8Array(n);
@@ -65,6 +72,7 @@ export class NavGrid {
     this.cover = new Uint8Array(n);         // 8-direction bitmask of blocked sight
     this.coverQuality = new Float32Array(n);
     this.indoor = new Uint8Array(n);
+    this.spawnable = new Uint8Array(n);     // where somebody may materialise
 
     // A* scratch, reused between queries so pathing allocates nothing.
     this._g = new Float32Array(n);
@@ -109,8 +117,17 @@ export class NavGrid {
         origin.set(x, groundY + 0.12, z);
         if (this.bvh.raycast(origin, UP, AGENT_HEIGHT, hit).hit && hit.t < 1.1) continue;
 
-        origin.set(x, groundY + 1.2, z);
-        this.indoor[i] = this._enclosed(origin, hit) ? 1 : 0;
+        // Indoors is first of all a fact the generator already knows — inside
+        // any building footprint, including its doorway cells — and only then
+        // a geometric guess for covered spots the footprints do not describe.
+        // The raycast heuristic alone kept missing rooms with a big open
+        // front, and people kept waking up in them.
+        if (this._inFootprint(x, z)) {
+          this.indoor[i] = 1;
+        } else {
+          origin.set(x, groundY + 1.2, z);
+          this.indoor[i] = this._enclosed(origin, hit) ? 1 : 0;
+        }
 
         // A downward ray passes straight through a wall it never touches, so
         // rooms full of standing geometry read as open floor. Test the volume
@@ -124,7 +141,40 @@ export class NavGrid {
     this._computeClearance();
     this._keepLargestRegion();
     this._computeCover();
+    this._computeSpawnable();
     return this;
+  }
+
+  /**
+   * Walkable, outdoors, and inside the play area.
+   *
+   * The map keeps a five-metre service strip between the outer building rows
+   * and the boundary wall. It is legitimately walkable — the AI may retreat
+   * through it — but a spawn draw that lands there puts someone behind the
+   * entire district with a wall at their back and nothing to shoot at, which
+   * players report, reasonably, as spawning on the wrong side of the map.
+   */
+  _computeSpawnable() {
+    const pb = this.playBounds;
+    for (let iz = 0; iz < this.h; iz++) {
+      for (let ix = 0; ix < this.w; ix++) {
+        const i = this.index(ix, iz);
+        if (!this.walkable[i] || this.indoor[i]) continue;
+        if (pb) {
+          const x = this.worldX(ix), z = this.worldZ(iz);
+          if (x < pb.x0 || x > pb.x1 || z < pb.z0 || z > pb.z1) continue;
+        }
+        this.spawnable[i] = 1;
+      }
+    }
+  }
+
+  /** Inside any building lot, with half a metre of grace at the walls. */
+  _inFootprint(x, z) {
+    for (const b of this.buildings) {
+      if (x > b.x0 - 0.5 && x < b.x1 + 0.5 && z > b.z0 - 0.5 && z < b.z1 + 0.5) return true;
+    }
+    return false;
   }
 
   /** A ceiling at room height and walls most of the way round. */
@@ -536,7 +586,7 @@ export class NavGrid {
       const ix = (rng.next() * this.w) | 0;
       const iz = (rng.next() * this.h) | 0;
       const i = this.index(ix, iz);
-      if (!this.walkable[i] || this.indoor[i] || this.clearance[i] < clearance) continue;
+      if (!this.spawnable[i] || this.clearance[i] < clearance) continue;
 
       const x = this.worldX(ix), z = this.worldZ(iz);
       let nearest = Infinity;
