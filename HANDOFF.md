@@ -13,8 +13,16 @@ verified chunk — the user wants frequent pushes).
 - `npm run build` — build to `dist/` (~2s)
 - `npm run preview` — serves `dist/` on 4319 (**tests and tools expect this
   to be running**; check before debugging "connection refused")
-- `npx playwright test --reporter=list` — full suite, ~6–10 min, 40 tests,
-  green as of the last run
+- `npx playwright test --reporter=list` — full suite, ~6–10 min, 40 tests.
+  Last run: 38 passed, 2 failed. "a traced shot damages the thing it is
+  pointed at" is a flake (passes on re-run; the aimed-at enemy moves).
+  **"crouching out of a sprint carries speed and drops the head" fails
+  repeatably since the spawnable-mask change** — the random spawn now lands
+  somewhere the test's four-heading run-up cannot reach sliding pace
+  (gate: sprint key held + speed > walk×0.9). The slide mechanic itself was
+  verified working today; fix the TEST (teleport to a long clear stretch,
+  e.g. the market lane, before the run-up — `tools/snippets/slide-probe.js`
+  is a ready-made probe for exactly this). First task for whoever picks up.
 - `node tools/eval.mjs <snippet.js>` — evaluate a JS snippet against the
   running game (`g` = game, `h` = harness) and print the JSON result. Use
   this for any question about state. Snippets live in `tools/snippets/`.

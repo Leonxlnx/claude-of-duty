@@ -6,3 +6,5 @@ playwright-report
 # development scratch: screenshots and reference frames
 shots
 ref
+
+test-run.log
