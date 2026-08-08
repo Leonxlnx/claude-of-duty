@@ -65,11 +65,40 @@ against the pixels yourself before building.
   pass); CPU profile healthy (render 1.4ms, AI 1.0ms on a mid machine).
 - **HUD**: clusters glide in on deploy; menu footer restyled as keycaps.
 
-## THE CURSOR TRAP (user's top pain, twice reported, treat as unresolved)
+## THE CURSOR TRAP (root cause found on the third report — layer 4)
 
-Symptom: on the user's Windows machine the visible mouse cursor ends up
-confined to the top-left quarter of the screen around pointer-lock use.
-Three layers were shipped, in order:
+**The bug was in this repo, not only in Chromium.** `Game._bindEvents` assigned
+its lock-loss handler to `input.onLockChange`; `Input` only ever calls
+`onPointerLockChange`. The auto-pause therefore never ran once. Consequences,
+which match every symptom the user described:
+
+- Escape ends the pointer lock. Without Keyboard Lock (which needs fullscreen,
+  and fullscreen has been opt-in since layer 2) the browser consumes that
+  keydown, so `onPauseRequested` never fires either. The match stayed in
+  `playing` with no menu and no mouse handling.
+- `src/main.js` had `canvas.mousedown -> input.requestLock()` guarded only on
+  `state === 'playing'`. So the next click anywhere on the game took the mouse
+  straight back. Give it back, click, gone again — indefinitely.
+- `requestLock` decided success by awaiting the return of
+  `requestPointerLock()`, which is `undefined` on older engines: `await
+  undefined` is `true`, so a *refused* request reported success and the
+  `_unwind()` safety net was dead code. Pointer Lock 2.0 specifies that a
+  request made straight after the browser's own unlock gesture is refused —
+  Escape-then-click is exactly that, so this path was being hit routinely.
+
+Fixed and pushed: handler wired to the real name, implicit relock deleted (the
+mouse is only taken from Deploy or Resume), acquisition determined from the
+`pointerlockchange` / `pointerlockerror` events, `pointerlockerror` returns to
+the pause menu, and leaving fullscreen by any route clears the flag and the
+keyboard lock. Guarded by the smoke test "losing pointer lock pauses, and a
+click does not take the mouse back", which exits a real lock — verified to fail
+against the old property name.
+
+The player must hard-refresh (Ctrl+Shift+R) to pick this up. If a trapped OS
+cursor still survives *after* the match has paused itself, that is the
+Chromium-side clip and the three layers below are what address it.
+
+### The three earlier layers (all still in place)
 
 1. Symmetric unwind — keyboard lock + fullscreen released whenever pointer
    lock ends, and on `visibilitychange`/`blur` (`src/core/Input.js`).
@@ -79,12 +108,10 @@ Three layers were shipped, in order:
 3. `unadjustedMovement` (raw input) now **defaults off** — its Windows path
    is implicated in exactly this stale-clip bug on scaled displays.
 
-The user had not yet confirmed the fix after layer 3. If it recurs with all
-three in place: have them hard-refresh (Ctrl+Shift+R) first — an old tab
-keeps old code — and confirm `localStorage['dust-corridor.settings.v3']`
-exists with `fullscreenOnPlay:false, rawInput:false`. Next suspects: the
-auto-relock on canvas `mousedown` in `src/main.js`, and DevTools-docked
-geometry during dev. Unstick escape hatch for the user: Alt+Tab or F11 ×2.
+If it recurs with layer 4 in place *and* the match does pause itself, confirm
+`localStorage['dust-corridor.settings.v3']` has `fullscreenOnPlay:false,
+rawInput:false`, then suspect DevTools-docked geometry during dev. Unstick
+escape hatch for the user: Alt+Tab or F11 ×2.
 
 ## Open work, in priority order
 
