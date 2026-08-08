@@ -61,7 +61,35 @@ against the pixels yourself before building.
   pass); CPU profile healthy (render 1.4ms, AI 1.0ms on a mid machine).
 - **HUD**: clusters glide in on deploy; menu footer restyled as keycaps.
 
-## THE CURSOR TRAP — measured, and there is now an OS-side release
+## THE CURSOR TRAP — SOLVED. It was the test suite, not the game.
+
+**A headless Chromium still applies the OS cursor clip when a page takes
+pointer lock, and it clips to its own viewport at the screen origin.** Every
+`?auto=1` boot — the Playwright suite, `shot.mjs`, `eval.mjs`,
+`gauntlet-shots.mjs` — took the lock a few hundred ms after start. So for the
+length of a six-minute test run the developer's real desktop cursor was penned
+into a 1280x720 box in the top-left corner of a 1920x1200 screen. Alt-Tab
+cleared it because Windows drops the clip when the clipping window loses
+foreground; the next boot took it straight back.
+
+That is why the user could say, correctly, "it never happens when I'm in the
+game, only when you're developing" — and why three rounds of page-side fixes
+could not touch it. Nothing a player does was ever involved.
+
+Caught by leaving `tools/cursor-guard.ps1 -Watch` running: it logged a stream
+of `released confined clip 1280x720 at 0,0` during a test run and nothing at
+any other time. Fixed by `requestLock()` returning early under
+`navigator.webdriver` — the harness injects input directly and never needed the
+lock. Verified: a smoke run that previously produced a release every few
+seconds now produces none.
+
+**If you add a tool that boots the game, it inherits this fix automatically.
+Do not "restore" pointer lock for automation.**
+
+### Everything below is still in place, and still worth having
+
+They were aimed at a Chromium-side clip that turned out not to be the cause,
+but each fixed a real defect on the way.
 
 **The mechanism is confirmed, with numbers.** On this machine the physical
 desktop is **1920x1200** and the display scaling is **125%**, so the *logical*
