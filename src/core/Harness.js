@@ -133,6 +133,38 @@ export function installHarness(game) {
       return { target: target.name, standoff, position: best.toArray().map(round3) };
     },
 
+    /**
+     * Stop the opposition where it stands, holding its current pose.
+     *
+     * Any test that aims at an enemy and then does something is racing that
+     * enemy's own decisions: it walks behind a stall mid-burst and the test
+     * reports that shots do no damage. Agents keep being posed each step so
+     * their hitboxes stay coherent — they simply stop deciding and stop
+     * moving. Also what `tools/enemy-shots.mjs` needs to photograph one.
+     */
+    freezeAI(on = true) {
+      const d = game.director;
+      if (on) {
+        if (d.__liveUpdate) return true;
+        d.__liveUpdate = d.update.bind(d);
+        const held = d.agents.map((a) => ({
+          agent: a,
+          control: { yaw: a.aimYaw, pitch: a.aimPitch, stance: a.stance, aiming: a.aiming }
+        }));
+        d.update = (dt) => {
+          for (const { agent, control } of held) {
+            agent.controller.velocity.set(0, 0, 0);
+            agent.character.velocity.set(0, 0, 0);
+            agent.character.update(dt, control);
+          }
+        };
+      } else if (d.__liveUpdate) {
+        d.update = d.__liveUpdate;
+        d.__liveUpdate = null;
+      }
+      return on;
+    },
+
     // ---------------------------------------------------------------- state
     snapshot() {
       const m = game.match;

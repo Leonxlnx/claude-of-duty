@@ -646,8 +646,12 @@ test.describe('gunplay', () => {
     if (!engaged) test.skip(true, 'no living enemy to shoot');
     await settle(page, 200);
 
-    // Enemies keep moving, so a single aim goes stale within a few rounds.
-    // Re-aim across the burst the way a player tracking a target would.
+    // Hold the opposition still for the burst. Tracking a live agent across a
+    // burst is a race the test loses often enough to be useless: it steps
+    // behind a stall halfway through and the result reads as "a traced shot
+    // does no damage" when tracing is not what failed.
+    await page.evaluate(() => window.__harness.freezeAI(true));
+
     const before = await page.evaluate(() => {
       const g = window.__game;
       const health = {};
@@ -658,13 +662,17 @@ test.describe('gunplay', () => {
     await page.evaluate(async () => {
       const h = window.__harness;
       h.fire(true);
+      // Simulated seconds. Fifty milliseconds of wall clock is a couple of
+      // rounds on a workstation and a fraction of one under a software
+      // rasteriser, so a burst measured on the clock is a different burst on
+      // every machine.
       for (let i = 0; i < 10; i++) {
         h.aimAtEnemy();
-        await new Promise((r) => setTimeout(r, 50));
+        await h.wait(0.05);
       }
       h.fire(false);
     });
-    await settle(page, 300);
+    await page.evaluate(() => window.__harness.wait(0.3));
 
     const after = await page.evaluate((prev) => {
       const g = window.__game;
@@ -684,6 +692,10 @@ test.describe('gunplay', () => {
 
     const before = await snapshot(page);
 
+    // Hold the opposition still, or the burst is aimed at where an agent used
+    // to be and the test measures the AI's footwork rather than the killfeed.
+    await page.evaluate(() => window.__harness.freezeAI(true));
+
     // Keep engaging and firing until someone drops or the attempts run out.
     for (let attempt = 0; attempt < 6; attempt++) {
       const done = await page.evaluate(async () => {
@@ -693,17 +705,19 @@ test.describe('gunplay', () => {
         h.aimAtEnemy();
         g.weapon.ammo = g.weapon.spec.magSize;
         h.fire(true);
+        // Simulated seconds — a wall-clock burst is a different number of
+        // rounds on every machine.
         for (let i = 0; i < 12; i++) {
-          await new Promise((r) => setTimeout(r, 50));
+          await h.wait(0.05);
           h.aimAtEnemy();
         }
         h.fire(false);
         return g.match.scores.A > 0;
       });
       if (done) break;
-      await settle(page, 200);
+      await page.evaluate(() => window.__harness.wait(0.2));
     }
-    await settle(page, 600);
+    await page.evaluate(() => window.__harness.wait(0.6));
 
     const after = await snapshot(page);
     expect(after.scores.A).toBeGreaterThan(before.scores.A);
