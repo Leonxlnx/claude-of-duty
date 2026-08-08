@@ -176,7 +176,11 @@ export class Menu {
       this._toggle('Fullscreen on deploy', Settings.data.fullscreenOnPlay === true,
         (v) => this._set('fullscreenOnPlay', v),
         'Also lets the game keep Ctrl+W. On some scaled displays the browser can '
-        + 'trap the cursor in a corner of the screen afterwards — turn this off if that happens.')
+        + 'trap the cursor in a corner of the screen afterwards — turn this off if that happens.'),
+      this._toggle('Raw mouse input', Settings.data.rawInput === true,
+        (v) => this._set('rawInput', v),
+        'Skips pointer acceleration for aiming. Leave off if the cursor ever '
+        + 'gets stuck in a region of the screen after a match.')
     ]));
 
     body.appendChild(this._group('Audio', [

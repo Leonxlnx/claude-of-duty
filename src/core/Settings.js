@@ -50,6 +50,9 @@ const DEFAULTS = {
   // confirmation on leaving the page covers accidental Ctrl+W instead; anyone
   // who wants true fullscreen can turn it on in settings.
   fullscreenOnPlay: false,
+  // Raw (unadjusted) mouse input. Skips OS pointer acceleration, but its
+  // Windows path is implicated in the stuck cursor clip on scaled displays.
+  rawInput: false,
   keybinds: {
     fire: 'Mouse0', aim: 'Mouse2',
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',

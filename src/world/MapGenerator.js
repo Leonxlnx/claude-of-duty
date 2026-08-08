@@ -105,6 +105,8 @@ function subdivideLots(z0, z1, gaps, rng, minLot = 8.5, maxLot = 16) {
   return lots;
 }
 
+function mulTint(t, k) { return [t[0] * k, t[1] * k, t[2] * k]; }
+
 function lotOpenSides(z0, z1, gaps, bandZ0, bandZ1) {
   const nearGap = (z) => gaps.some(([g0, g1]) => Math.abs(z - g0) < 1.2 || Math.abs(z - g1) < 1.2);
   return [
@@ -280,8 +282,70 @@ export class MapGenerator {
         collide: true, surface: SURFACE.PLASTER
       });
     }
+
+    // The town continues past the walls. Without a skyline every sightline
+    // ends in a bare plaster slab and the district reads as an arena floating
+    // in nothing; a couple of rings of rough blocks with rooftop bumps, hazed
+    // out by aerial perspective, sell twenty streets that do not exist. No
+    // collision — nothing playable happens out there.
+    this._buildSkyline(detail, rng.fork(7));
+
     // invisible ceiling so nothing can escape over the rooftops
     structure.addCollisionBox(0, 34, 0, (B + 10) * 2, 1, (zMax - zMin) + 20, SURFACE.CONCRETE);
+  }
+
+  _buildSkyline(detail, rng) {
+    const B = MAP.boundary;
+    const zMin = MAP.zMin, zMax = MAP.zMax;
+
+    // Two depth rings: nearer blocks peek over the boundary wall, a farther
+    // taller ring layers behind them so the edge has parallax.
+    for (const ring of [
+      { off: 14, hMin: 9, hMax: 17, step: [10, 18] },
+      { off: 34, hMin: 14, hMax: 26, step: [14, 26] }
+    ]) {
+      const lo = zMin - ring.off - 20, hi = zMax + ring.off + 20;
+      // rows running parallel to the map's long axis, one each side
+      for (const sign of [1, -1]) {
+        let z = lo;
+        while (z < hi) {
+          const len = rng.range(ring.step[0], ring.step[1]);
+          this._skylineBlock(detail, rng, sign * (B + ring.off), (z + len * 0.5), len, ring);
+          z += len + rng.range(1, 6);
+        }
+      }
+      // and rows closing off both ends of the street
+      for (const zc of [zMax + ring.off, zMin - ring.off]) {
+        let x = -B - ring.off;
+        while (x < B + ring.off) {
+          const len = rng.range(ring.step[0], ring.step[1]);
+          this._skylineBlock(detail, rng, x + len * 0.5, zc, len, ring, true);
+          x += len + rng.range(1, 6);
+        }
+      }
+    }
+  }
+
+  _skylineBlock(detail, rng, x, z, len, ring, rotated = false) {
+    const h = rng.range(ring.hMin, ring.hMax);
+    const depth = rng.range(7, 12);
+    const style = WALL_STYLES[rng.int(0, WALL_STYLES.length - 1)];
+    const w = rotated ? len : depth;
+    const d = rotated ? depth : len;
+    detail.addBox(x, h * 0.5, z, w, h, d, {
+      layer: style.layer, tint: mulTint(style.tint, rng.range(0.82, 1.0)),
+      wear: rng.range(0.5, 0.95), uvScale: 0.35
+    });
+    // rooftop bumps: stair boxes and tanks as plain silhouette breakers
+    const bumps = rng.int(0, 2);
+    for (let i = 0; i < bumps; i++) {
+      const bw = rng.range(1.5, 3.2), bh = rng.range(1.4, 2.8);
+      detail.addBox(
+        x + rng.range(-w * 0.3, w * 0.3), h + bh * 0.5, z + rng.range(-d * 0.3, d * 0.3),
+        bw, bh, bw * rng.range(0.7, 1.2),
+        { layer: style.layer, tint: mulTint(style.tint, 0.92), wear: 0.8, uvScale: 0.5 }
+      );
+    }
   }
 
   /** Market street: stalls, awnings, barriers, vehicles, lamps, cover rhythm. */

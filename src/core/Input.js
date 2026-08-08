@@ -87,6 +87,10 @@ export class Input {
     window.addEventListener('blur', () => {
       this.keys.clear();
       this.buttons = [false, false, false];
+      // Focus is leaving with the lock still held — alt-tab, a notification, a
+      // debugger. Give everything back now: a confinement held across a focus
+      // change is the state that goes stale.
+      this.releaseLock();
     });
     // A hidden tab must hold nothing. Anything left engaged here is exactly
     // the state that outlives the tab in the compositor.
@@ -111,13 +115,19 @@ export class Input {
         this._enteredFullscreen = true;
       } catch { /* denied or unsupported */ }
     }
-    // Raw mouse input is the one we want, but it is not everywhere, and both
-    // the call and the promise it may or may not return can fail. Every path
-    // has to swallow, or a denied lock surfaces as an unhandled rejection.
+    // Raw mouse input (unadjustedMovement) bypasses pointer acceleration, but
+    // on Windows it also takes a different cursor-confinement path — the one
+    // implicated when the visible cursor stays pinned to a corner of the
+    // screen after the lock ends on scaled displays. It is opt-in: aim feel
+    // costs a preference, a trapped cursor costs the whole session.
     const attempt = async (options) => {
       try { await this.canvas.requestPointerLock(options); return true; } catch { return false; }
     };
-    if (!await attempt({ unadjustedMovement: true }) && !await attempt(undefined)) {
+    const wantRaw = Settings.data.rawInput === true;
+    const ok = wantRaw
+      ? (await attempt({ unadjustedMovement: true }) || await attempt(undefined))
+      : await attempt(undefined);
+    if (!ok) {
       // Half-acquired is the dangerous state: fullscreen without pointer lock
       // leaves the browser's cursor confinement with nothing to release it.
       this._unwind();
