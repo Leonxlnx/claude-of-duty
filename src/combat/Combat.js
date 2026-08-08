@@ -205,7 +205,7 @@ export class Combat {
           energy *= Math.max(0, 1 - cost);
           damage *= Math.max(0, 1 - cost * 1.15);
           if (energy > 0.16) {
-            this._surfaceImpact(exit.point, exit.normal, dir, surface, energy * 0.6);
+            this._exitSpall(exit.point, exit.normal, dir, surface, energy * 0.6);
             origin.copy(exit.point).addScaledVector(dir, 0.01);
             travelled += exit.thickness;
             // exit wounds spray forward
@@ -337,9 +337,13 @@ export class Combat {
         growth: 4.5, spin: (this.rng.next() - 0.5) * 0.7, fade: 1
       });
     }
-    // hard surfaces throw chips
-    if (info.hardness > 0.6) {
-      const chips = Math.max(1, Math.round(3 * density));
+    // Chips and splinters. This used to be gated above 0.6 hardness, which
+    // excluded wood, plaster and glass — precisely the materials a round goes
+    // *through* to get into a room, so shuttered windows and stud walls
+    // answered a rifle with a puff of dust and nothing else. Everything but
+    // sand and fabric throws something; what differs is how much.
+    if (info.hardness > 0.22) {
+      const chips = Math.max(1, Math.round(3 * density * (0.5 + info.hardness)));
       for (let i = 0; i < chips; i++) {
         _v.copy(normal).multiplyScalar(2.5 + this.rng.next() * 3.5);
         _v.x += (this.rng.next() - 0.5) * 3;
@@ -368,6 +372,72 @@ export class Combat {
         });
       }
     }
+  }
+
+  /**
+   * The far side of a wall a round just came through.
+   *
+   * An exit is not a small entry. The round leaves a ragged hole and throws
+   * everything it displaced forward into the room as a cone of spall, while
+   * the entry side barely puffs — so reusing the entry effect here made
+   * shooting into a building read as shooting *at* one. This is what sells a
+   * round arriving in a space: splinters going the way the round was going,
+   * and a plume of dust left hanging in the dark where it came through.
+   */
+  _exitSpall(point, normal, dir, surface, energy) {
+    const info = SURFACE_INFO[surface] || SURFACE_INFO[0];
+    const dust = _color.setHex(info.dust);
+    const density = this.quality.particleDensity;
+
+    this.decals.add(point, normal, DECAL_KIND_BY_SURFACE[surface] ?? DECAL.HOLE_HARD,
+      0.11 + this.rng.next() * 0.08, { seed: this.rng.next(), tangentHint: dir });
+
+    // Spall follows the round rather than bouncing back off the surface.
+    const puffs = Math.max(3, Math.round(8 * density * energy));
+    for (let i = 0; i < puffs; i++) {
+      _v.copy(dir).multiplyScalar(2.2 + this.rng.next() * 2.4);
+      _v.addScaledVector(normal, 0.6);
+      _v.x += (this.rng.next() - 0.5) * 2.2;
+      _v.y += (this.rng.next() - 0.5) * 1.6;
+      _v.z += (this.rng.next() - 0.5) * 2.2;
+      this.particles.spawn({
+        position: point, velocity: _v, kind: PKIND.DUST,
+        size: 0.07 + this.rng.next() * 0.16,
+        color: [dust.r * 1.05, dust.g * 1.02, dust.b],
+        alpha: 0.6 + this.rng.next() * 0.3,
+        life: 0.7 + this.rng.next() * 1.0,
+        drag: 2.6, gravity: 1.3, growth: 4.2, spin: (this.rng.next() - 0.5) * 3,
+        fade: 1
+      });
+    }
+
+    // Splinters and fragments, thrown into the room. Soft materials shed long
+    // slivers, hard ones shed grit; both are what a witness in the room sees.
+    const shards = Math.max(2, Math.round(6 * density * energy));
+    for (let i = 0; i < shards; i++) {
+      _v.copy(dir).multiplyScalar(4.5 + this.rng.next() * 5.5);
+      _v.x += (this.rng.next() - 0.5) * 3.4;
+      _v.y += (this.rng.next() - 0.5) * 2.6;
+      _v.z += (this.rng.next() - 0.5) * 3.4;
+      this.particles.spawn({
+        position: point, velocity: _v, kind: PKIND.DEBRIS,
+        size: (info.hardness < 0.5 ? 0.014 : 0.009) + this.rng.next() * 0.016,
+        color: [dust.r * 0.82, dust.g * 0.8, dust.b * 0.76],
+        alpha: 1, life: 0.9 + this.rng.next() * 0.7,
+        drag: 0.35, gravity: 12, spin: (this.rng.next() - 0.5) * 22, fade: 0
+      });
+    }
+
+    // The plume that hangs. Unconditional, unlike the entry side's — a room
+    // interior is the one place this reads, and it is the whole effect.
+    this.particles.spawn({
+      position: point, velocity: _v.copy(dir).multiplyScalar(0.8),
+      kind: PKIND.SMOKE, size: 0.22, color: [dust.r, dust.g, dust.b],
+      alpha: 0.34, life: 2.2 + this.rng.next() * 1.2, drag: 1.2, gravity: -0.18,
+      growth: 5.5, spin: (this.rng.next() - 0.5) * 0.6, fade: 1
+    });
+
+    if (surface === SURFACE.METAL) this._ricochetSparks(point, dir);
   }
 
   _ricochetSparks(point, dir) {
