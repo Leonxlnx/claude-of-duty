@@ -68,6 +68,10 @@ export class Director {
       this._alertNearby(agent, info?.point, 26);
       void amount;
     };
+    // A round that goes past counts for something, even though it connected
+    // with nothing. Combat measures every segment of the flight path against
+    // every chest, so this fires for misses, over-penetrations and ricochets.
+    character.onNearMiss = (info) => agent.onNearMiss(info);
     character.onKilled = (info) => {
       agent._setState(AI_STATE.DEAD);
       this._respawnQueue.push({ agent, time: this.respawnDelay });

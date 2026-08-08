@@ -249,6 +249,41 @@ export class Agent {
   }
 
   /**
+   * A round went past without connecting.
+   *
+   * Suppression used to need a hit, which made missing free — an agent stood
+   * in the open and returned fire at leisure while rounds cracked past its
+   * head. Now the near miss costs it accuracy through `stress`, buys the
+   * shooter a beat of interrupted tracking, and points it at where the round
+   * came from even if it never saw the muzzle. It is deliberately weaker than
+   * `onDamaged`: being missed is frightening, being hit is worse.
+   */
+  onNearMiss({ intensity = 1, source = null } = {}) {
+    this.stress = Math.min(1, this.stress + 0.30 * intensity);
+    this.awareness = Math.min(1, this.awareness + 0.45 * intensity);
+    // Flinch, but only for a close one, and never as hard as a hit — an agent
+    // that ducks off its aim every time anyone fires in its direction cannot
+    // hold a firefight at all.
+    if (intensity > 0.45) {
+      this.reactionTimer = Math.max(this.reactionTimer, 0.12 * intensity);
+      this.aimYaw += (this.rng.next() - 0.5) * 0.12 * intensity;
+    }
+    if (source?.alive && !this.targetVisible) {
+      this.suspicionPoint.copy(source.position);
+      this.hasSuspicion = true;
+      if (this.state === AI_STATE.PATROL || this.state === AI_STATE.IDLE) {
+        this._setState(AI_STATE.INVESTIGATE);
+      }
+    }
+    // Pinned in the open by fire that is finding its range: get behind
+    // something. This is the behaviour the whole feature is for.
+    if (this.stress > 0.72 && !this.hasCover
+        && this.state !== AI_STATE.SEEK_COVER && this.state !== AI_STATE.DEAD) {
+      this._setState(AI_STATE.SEEK_COVER);
+    }
+  }
+
+  /**
    * A live grenade in range overrides every other plan.
    *
    * The flee is a straight steering override rather than a state: it has to

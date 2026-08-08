@@ -767,6 +767,50 @@ test.describe('damage and respawn', () => {
 });
 
 test.describe('AI', () => {
+  test('a round that misses still suppresses', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 1500);
+
+    const run = await page.evaluate(async () => {
+      const g = window.__game, h = window.__harness;
+      // Stand somewhere with a clear line first, then hold everyone still —
+      // a round that stops in a wall never passes anybody.
+      if (!h.engageNearestEnemy(10)) return null;
+      h.freezeAI(true);
+      const target = h.nearestEnemy();
+      if (!target) return null;
+      const agent = g.director.agents.find((a) => a.character === target);
+      agent.stress = 0;
+      agent.awareness = 0;
+
+      // Fire past the chest rather than into it: offset the aim point sideways
+      // by most of the near-miss radius, so the round has to be counted for
+      // passing rather than for landing.
+      const Vec = g.player.eye.constructor;
+      const chest = target.rig.joints[2].clone();   // RD.CHEST
+      const away = new Vec().subVectors(chest, g.player.eye).setY(0).normalize();
+      const side = new Vec(-away.z, 0, away.x).multiplyScalar(1.1);
+      const aim = chest.clone().add(side);
+
+      const healthBefore = target.health;
+      for (let i = 0; i < 6; i++) {
+        h.aimAt(aim.x, aim.y, aim.z);
+        g.weapon.ammo = g.weapon.spec.magSize;
+        h.fire(true);
+        await h.wait(0.08);
+        h.fire(false);
+        await h.wait(0.08);
+      }
+      return { stress: agent.stress, awareness: agent.awareness, hurt: target.health < healthBefore };
+    });
+
+    test.skip(run === null, 'no living enemy to shoot past');
+    // Missing has to cost the shooter nothing and the target something.
+    expect(run.hurt, 'the burst hit, so this measured damage not suppression').toBe(false);
+    expect(run.stress).toBeGreaterThan(0.1);
+    expect(run.awareness).toBeGreaterThan(0.1);
+  });
+
   test('agents patrol, acquire the player and shoot back', async ({ page }) => {
     await boot(page, '?auto=1');
     await settle(page, 1200);

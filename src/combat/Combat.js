@@ -4,6 +4,7 @@ import { ParticleSystem, PKIND } from '../fx/Particles.js';
 import { DecalSystem, DECAL } from '../fx/Decals.js';
 import { InstancedBatch, casingGeometry, magazineGeometry, grenadeGeometry } from '../fx/InstancedBatch.js';
 import { SeededRandom } from '../core/SeededRandom.js';
+import { RD } from '../physics/Ragdoll.js';
 
 /**
  * Ballistics and impact response.
@@ -17,6 +18,8 @@ import { SeededRandom } from '../core/SeededRandom.js';
 
 const MAX_BOUNCES = 3;
 const MAX_DECALS = 384;
+/** How close a round has to pass a chest before it counts as suppressing. */
+const NEAR_MISS_RADIUS = 1.6;
 /** Fallback ballistics for a generic intermediate rifle round. */
 const DEFAULT_ROUND = {
   headMultiplier: 2.0, limbMultiplier: 0.85, penetration: 0.6,
@@ -217,7 +220,38 @@ export class Combat {
     if (segments.length) {
       this._spawnTracer(shot.muzzle || segments[0][0], segments, spec.muzzleVelocity, shot.firstPerson);
     }
+    this._reportNearMisses(segments, shot.owner);
     return hitSomething;
+  }
+
+  /**
+   * Tell anyone a round went past, and how close.
+   *
+   * Suppression used to require actually connecting, which makes missing free:
+   * a burst that cracks past someone's head changed nothing about how they
+   * behaved. Every segment of the flight path is checked, so a round that
+   * misses one agent, punches through a shutter and misses another suppresses
+   * both, and a ricochet suppresses whatever it screams past on the way out.
+   */
+  _reportNearMisses(segments, owner) {
+    if (!segments.length) return;
+    for (const c of this.characters) {
+      if (!c.alive || c === owner || !c.onNearMiss) continue;
+      let closest = Infinity;
+      for (const [a, b] of segments) {
+        const d = distanceToSegment(c.rig.joints[RD.CHEST], a, b);
+        if (d < closest) closest = d;
+      }
+      // Beyond about a metre and a half a supersonic round is a noise in the
+      // street rather than something that happened to you.
+      if (closest > NEAR_MISS_RADIUS) continue;
+      c.onNearMiss({
+        distance: closest,
+        // 1 at a graze, falling to 0 at the edge of the radius.
+        intensity: 1 - closest / NEAR_MISS_RADIUS,
+        source: owner ?? null
+      });
+    }
   }
 
   _falloff(distance, spec) {
@@ -730,6 +764,18 @@ function pointAlong(path, distance, outPoint, outDir) {
   outDir.subVectors(path[path.length - 1], path[Math.max(0, path.length - 2)]).normalize();
 }
 
+/** Shortest distance from a point to a line segment. */
+function distanceToSegment(point, a, b) {
+  _segAB.subVectors(b, a);
+  const lenSq = _segAB.lengthSq();
+  if (lenSq < 1e-9) return point.distanceTo(a);
+  const t = THREE.MathUtils.clamp(_segAP.subVectors(point, a).dot(_segAB) / lenSq, 0, 1);
+  return point.distanceTo(_segClosest.copy(a).addScaledVector(_segAB, t));
+}
+
+const _segAB = new THREE.Vector3();
+const _segAP = new THREE.Vector3();
+const _segClosest = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _origin = new THREE.Vector3();
 const _point = new THREE.Vector3();
