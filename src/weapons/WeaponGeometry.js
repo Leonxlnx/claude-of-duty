@@ -10,12 +10,26 @@ import { LAYER } from '../world/MaterialLibrary.js';
  * ejection arc and the hand placement land where the eye expects them.
  */
 
-// Tints multiply the layer's base albedo, and the polymer layer is authored as
-// black furniture, so flat dark earth needs to lift it a long way rather than
-// just warm it. An all-black carbine against a shaded street is a silhouette.
-const GUNMETAL = [1, 1, 1];
-const FDE = [1.42, 1.21, 0.90];
-const BLACK_POLY = [1, 1, 1];
+/**
+ * Weapon palette.
+ *
+ * Tints multiply the layer's base albedo. Both the metal and the polymer sat
+ * at pure white, which meant they were the same colour as each other and as
+ * bright as the layer texture allows — the barrel came out the *brightest*
+ * thing on the gun when it should be the darkest, and receiver, furniture and
+ * magazine were one undifferentiated slab. The weapon fills the lower-right
+ * third of every frame, so that is the object the eye returns to most.
+ *
+ * Now three separated materials: cool phosphate steel, near-black polymer, and
+ * flat dark earth furniture, with the polymer deliberately darkest so the
+ * silhouette has internal structure instead of reading as one grey mass.
+ */
+const GUNMETAL = [0.40, 0.42, 0.47];
+const FDE = [1.15, 0.94, 0.66];
+const BLACK_POLY = [0.21, 0.21, 0.23];
+
+/** A shade of one of the palette entries, so parts stay relative to it. */
+const shade = (c, k) => [c[0] * k, c[1] * k, c[2] * k];
 
 // --- geometry landmarks other systems need
 export const WEAPON_ANCHORS = {
@@ -84,7 +98,7 @@ function mlokFace(b, opts, axis, sign, z0, z1, radius) {
     const x = axis === 'x' ? sign * radius : 0;
     const y = axis === 'y' ? sign * radius : 0;
     b.addBox(x, y, zc, axis === 'x' ? 0.004 : 0.0075, axis === 'y' ? 0.004 : 0.0075, 0.0175, {
-      ...opts, tint: [0.35, 0.35, 0.36]
+      ...opts, tint: shade(GUNMETAL, 0.62)
     });
   }
 }
@@ -112,13 +126,13 @@ export function buildCarbine(b, opts = {}) {
   for (let i = 0; i < 5; i++) {
     const a = Math.PI * 0.5 + (i - 2) * 0.52;
     b.addBox(Math.cos(a) * 0.0118, Math.sin(a) * 0.0118, -0.446, 0.005, 0.005, 0.018, {
-      ...metal, tint: [0.5, 0.5, 0.5]
+      ...metal, tint: shade(GUNMETAL, 0.88)
     });
   }
   // crown + bore
   b.addCylinderBetween(V(0, 0, -0.466), V(0, 0, -0.469), 0.0118, 0.0092, 14, metal);
   b.addCylinderBetween(V(0, 0, -0.464), V(0, 0, -0.474), 0.0042, 0.0042, 12, {
-    layer: LAYER.GUNMETAL, tint: [0.04, 0.04, 0.04], wear: 0.2, uvScale: 20
+    layer: LAYER.GUNMETAL, tint: shade(BLACK_POLY, 0.18), wear: 0.2, uvScale: 20
   });
 
   // -------------------------------------------------------------- handguard
@@ -151,10 +165,10 @@ export function buildCarbine(b, opts = {}) {
   b.addBox(0, 0.030, 0.104, 0.032, 0.030, 0.026, metal);
   // ejection port with a proper door and hinge pin
   b.addBox(0.0198, 0.019, 0.010, 0.004, 0.030, 0.062, {
-    ...metal, tint: [0.55, 0.55, 0.56], wear: 0.75
+    ...metal, tint: shade(GUNMETAL, 1.20), wear: 0.75
   });
   b.addBox(0.0208, 0.019, 0.010, 0.003, 0.026, 0.056, {
-    ...metal, tint: [0.30, 0.30, 0.31]
+    ...metal, tint: shade(GUNMETAL, 0.55)
   });
   b.addCylinderBetween(V(0.021, 0.004, -0.021), V(0.021, 0.004, 0.041), 0.0022, 0.0022, 6, {
     ...metal, caps: false
@@ -180,33 +194,33 @@ export function buildCarbine(b, opts = {}) {
     const t = i / 4;
     const curve = t * t * 0.016;
     b.addBox(0, -t * 0.052 - 0.006, curve, 0.0268 - t * 0.001, 0.016, 0.0405 + t * 0.001, {
-      ...poly, tint: [0.92, 0.9, 0.86]
+      ...poly, tint: shade(FDE, 0.80)
     });
   }
   b.addBox(0, 0.020, -0.002, 0.0292, 0.014, 0.0432, poly);
-  b.addBox(0, -0.238, 0.062, 0.0292, 0.014, 0.0432, { ...poly, tint: [0.7, 0.7, 0.7] });
+  b.addBox(0, -0.238, 0.062, 0.0292, 0.014, 0.0432, { ...poly, tint: shade(BLACK_POLY, 1.30) });
   for (let i = 0; i < 4; i++) {
     b.addBox(0.0138, -0.032 - i * 0.040, 0.004 + i * 0.004, 0.003, 0.010, 0.012, {
-      ...poly, tint: [0.3, 0.3, 0.3]
+      ...poly, tint: shade(BLACK_POLY, 0.80)
     });
   }
   b.popTransform();
 
   // trigger guard, trigger, hammer pin, mag release, bolt catch, selector
-  b.addBox(0, -0.0455, 0.055, 0.0075, 0.005, 0.050, { ...metal, tint: [0.8, 0.8, 0.8] });
-  b.addBox(0, -0.032, 0.0805, 0.0075, 0.030, 0.005, { ...metal, tint: [0.8, 0.8, 0.8] });
+  b.addBox(0, -0.0455, 0.055, 0.0075, 0.005, 0.050, { ...metal, tint: shade(GUNMETAL, 1.40) });
+  b.addBox(0, -0.032, 0.0805, 0.0075, 0.030, 0.005, { ...metal, tint: shade(GUNMETAL, 1.40) });
   b.pushTransform(m(new THREE.Vector3(0, -0.030, 0.0575), new THREE.Euler(0.30, 0, 0)));
-  b.addBox(0, 0, 0, 0.0062, 0.021, 0.005, { ...metal, tint: [0.6, 0.6, 0.6] });
+  b.addBox(0, 0, 0, 0.0062, 0.021, 0.005, { ...metal, tint: shade(GUNMETAL, 1.05) });
   b.popTransform();
   b.addCylinderBetween(V(-0.0195, -0.006, 0.0605), V(-0.0245, -0.006, 0.0605), 0.0068, 0.0068, 8, metal);
   b.pushTransform(m(new THREE.Vector3(-0.0235, -0.006, 0.062), new THREE.Euler(0, 0, -0.5)));
-  b.addBox(0, 0, 0, 0.006, 0.0165, 0.0075, { ...metal, tint: [0.5, 0.5, 0.5] });
+  b.addBox(0, 0, 0, 0.006, 0.0165, 0.0075, { ...metal, tint: shade(GUNMETAL, 0.88) });
   b.popTransform();
-  b.addBox(0.0192, -0.014, 0.0075, 0.006, 0.011, 0.011, { ...metal, tint: [0.55, 0.55, 0.55] });
-  b.addBox(-0.0192, -0.010, 0.006, 0.005, 0.009, 0.028, { ...metal, tint: [0.5, 0.5, 0.5] });
+  b.addBox(0.0192, -0.014, 0.0075, 0.006, 0.011, 0.011, { ...metal, tint: shade(GUNMETAL, 1.00) });
+  b.addBox(-0.0192, -0.010, 0.006, 0.005, 0.009, 0.028, { ...metal, tint: shade(GUNMETAL, 0.88) });
   // takedown pins
-  b.addCylinderBetween(V(0.0178, -0.010, -0.030), V(0.0208, -0.010, -0.030), 0.0042, 0.0042, 8, { ...metal, tint: [0.65, 0.65, 0.65] });
-  b.addCylinderBetween(V(0.0178, -0.014, 0.0885), V(0.0208, -0.014, 0.0885), 0.0042, 0.0042, 8, { ...metal, tint: [0.65, 0.65, 0.65] });
+  b.addCylinderBetween(V(0.0178, -0.010, -0.030), V(0.0208, -0.010, -0.030), 0.0042, 0.0042, 8, { ...metal, tint: shade(GUNMETAL, 1.15) });
+  b.addCylinderBetween(V(0.0178, -0.014, 0.0885), V(0.0208, -0.014, 0.0885), 0.0042, 0.0042, 8, { ...metal, tint: shade(GUNMETAL, 1.15) });
 
   // ------------------------------------------------------------- pistol grip
   b.pushTransform(m(new THREE.Vector3(0, -0.072, 0.098), new THREE.Euler(0.42, 0, 0)));
@@ -225,27 +239,27 @@ export function buildCarbine(b, opts = {}) {
   b.addCylinderBetween(V(0, 0.014, 0.098), V(0, 0.014, 0.118), 0.0165, 0.0165, 12, { ...metal, caps: false });
   b.addCylinderBetween(V(0, 0.014, 0.118), V(0, 0.014, 0.314), 0.0148, 0.0148, 12, { ...metal, caps: false });
   // castle nut and receiver end plate
-  b.addCylinderBetween(V(0, 0.014, 0.108), V(0, 0.014, 0.118), 0.0185, 0.0185, 10, { ...metal, tint: [0.7, 0.7, 0.7] });
+  b.addCylinderBetween(V(0, 0.014, 0.108), V(0, 0.014, 0.118), 0.0185, 0.0185, 10, { ...metal, tint: shade(BLACK_POLY, 1.30) });
 
   // collapsible stock body
   b.pushTransform(m(new THREE.Vector3(0, 0.012, 0.214), new THREE.Euler(0, 0, 0)));
   b.addBox(0, 0.006, 0, 0.040, 0.048, 0.098, fde);
   b.addBox(0, 0.030, 0.006, 0.030, 0.020, 0.086, fde);        // cheek riser
   b.addBox(0, -0.022, -0.028, 0.034, 0.020, 0.040, fde);       // release lever housing
-  b.addBox(0, -0.030, -0.030, 0.014, 0.014, 0.030, { ...poly, tint: [0.6, 0.6, 0.6] });
+  b.addBox(0, -0.030, -0.030, 0.014, 0.014, 0.030, { ...poly, tint: shade(GUNMETAL, 1.05) });
   b.popTransform();
   // butt pad, angled
   b.pushTransform(m(new THREE.Vector3(0, 0.010, 0.272), new THREE.Euler(-0.13, 0, 0)));
-  b.addBox(0, 0, 0, 0.042, 0.088, 0.016, { ...poly, tint: [0.55, 0.55, 0.55] });
-  b.addBox(0, -0.036, 0.004, 0.040, 0.020, 0.012, { ...poly, tint: [0.42, 0.42, 0.42] });
+  b.addBox(0, 0, 0, 0.042, 0.088, 0.016, { ...poly, tint: shade(GUNMETAL, 1.00) });
+  b.addBox(0, -0.036, 0.004, 0.040, 0.020, 0.012, { ...poly, tint: shade(BLACK_POLY, 1.05) });
   b.popTransform();
   // sling loop
   b.addBox(0.021, 0.006, 0.176, 0.006, 0.020, 0.010, metal);
 
   // ----------------------------------------------------------- optic (RDS)
   // mount
-  b.addBox(0, 0.054, -0.055, 0.030, 0.018, 0.052, { ...metal, tint: [0.9, 0.9, 0.9] });
-  b.addBox(0.017, 0.050, -0.055, 0.008, 0.014, 0.048, { ...metal, tint: [0.7, 0.7, 0.7] });
+  b.addBox(0, 0.054, -0.055, 0.030, 0.018, 0.052, { ...metal, tint: shade(GUNMETAL, 1.45) });
+  b.addBox(0.017, 0.050, -0.055, 0.008, 0.014, 0.048, { ...metal, tint: shade(BLACK_POLY, 1.30) });
   b.addCylinderBetween(V(0.021, 0.050, -0.070), V(0.021, 0.050, -0.040), 0.0055, 0.0055, 8, metal);
   // Housing: four walls around an open bore, not a solid block. The window has
   // to be genuinely empty — anything spanning it, including a thin bezel plate,
@@ -255,42 +269,42 @@ export function buildCarbine(b, opts = {}) {
     const hw = 0.01725, hh = 0.020;      // outer half extents
     const t = 0.0038;                    // wall thickness
     const len = 0.060;
-    const shell = { ...metal, tint: [0.85, 0.85, 0.85] };
+    const shell = { ...metal, tint: shade(GUNMETAL, 1.35) };
     b.addBox(0, cy + hh - t * 0.5, cz, hw * 2, t, len, shell);          // top
     b.addBox(0, cy - hh + t * 0.5, cz, hw * 2, t, len, shell);          // bottom
     b.addBox(-hw + t * 0.5, cy, cz, t, (hh - t) * 2, len, shell);       // left
     b.addBox(hw - t * 0.5, cy, cz, t, (hh - t) * 2, len, shell);        // right
     // hood over the objective, clear of the top wall
-    b.addBox(0, cy + hh + 0.004, cz - 0.008, 0.0365, 0.005, 0.050, { ...metal, tint: [0.75, 0.75, 0.75] });
+    b.addBox(0, cy + hh + 0.004, cz - 0.008, 0.0365, 0.005, 0.050, { ...metal, tint: shade(GUNMETAL, 1.20) });
   }
   // brightness knob + battery cap
   b.addCylinderBetween(V(-0.019, 0.0855, -0.062), V(-0.027, 0.0855, -0.062), 0.0085, 0.0085, 10, {
-    ...metal, tint: [0.7, 0.7, 0.7]
+    ...metal, tint: shade(BLACK_POLY, 1.30)
   });
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
     b.addBox(-0.0235, 0.0855 + Math.sin(a) * 0.0085, -0.062 + Math.cos(a) * 0.0085, 0.003, 0.003, 0.003, {
-      ...metal, tint: [0.55, 0.55, 0.55]
+      ...metal, tint: shade(GUNMETAL, 1.00)
     });
   }
-  b.addCylinder(0, 0.104, -0.048, 0.0092, 0.0092, 0.007, 10, { ...metal, tint: [0.65, 0.65, 0.65] });
+  b.addCylinder(0, 0.104, -0.048, 0.0092, 0.0092, 0.007, 10, { ...metal, tint: shade(GUNMETAL, 1.15) });
 
   // ---------------------------------------------- back-up iron sights (folded)
-  b.addBox(0, 0.053, -0.300, 0.014, 0.014, 0.016, { ...metal, tint: [0.6, 0.6, 0.6] });
-  b.addBox(0, 0.053, 0.078, 0.016, 0.013, 0.018, { ...metal, tint: [0.6, 0.6, 0.6] });
+  b.addBox(0, 0.053, -0.300, 0.014, 0.014, 0.016, { ...metal, tint: shade(GUNMETAL, 1.05) });
+  b.addBox(0, 0.053, 0.078, 0.016, 0.013, 0.018, { ...metal, tint: shade(GUNMETAL, 1.05) });
 
   // -------------------------------------------------------- angled foregrip
   b.pushTransform(m(new THREE.Vector3(0, -0.040, -0.248), new THREE.Euler(0.48, 0, 0)));
   b.addBox(0, -0.030, 0, 0.024, 0.062, 0.030, fde);
   b.addBox(0, -0.062, 0.002, 0.028, 0.010, 0.034, fde);
   for (let i = 0; i < 4; i++) {
-    b.addBox(0, -0.016 - i * 0.013, -0.0155, 0.020, 0.006, 0.004, { ...fde, tint: [0.8, 0.74, 0.6] });
+    b.addBox(0, -0.016 - i * 0.013, -0.0155, 0.020, 0.006, 0.004, { ...fde, tint: shade(FDE, 0.72) });
   }
   b.popTransform();
 
   // -------------------------------------------------------------- QD sling
   b.addCylinderBetween(V(-0.020, -0.016, -0.120), V(-0.026, -0.016, -0.120), 0.005, 0.005, 8, {
-    ...metal, tint: [0.6, 0.6, 0.6]
+    ...metal, tint: shade(GUNMETAL, 1.05)
   });
 
   return WEAPON_ANCHORS;
@@ -302,9 +316,9 @@ export function buildCarbine(b, opts = {}) {
  * the work, and it stays a single static buffer we can animate rigidly.
  */
 export function buildHands(b) {
-  const glove = { layer: LAYER.GEAR_CLOTH, tint: [1.62, 1.26, 0.92], wear: 0.7, uvScale: 14 };
+  const glove = { layer: LAYER.GEAR_CLOTH, tint: [1.02, 0.83, 0.63], wear: 0.7, uvScale: 14 };
   const gloveHard = { layer: LAYER.POLYMER, tint: [2.05, 1.72, 1.32], wear: 0.6, uvScale: 16 };
-  const sleeve = { layer: LAYER.GEAR_CLOTH, tint: [1.72, 1.58, 1.12], wear: 0.75, uvScale: 7 };
+  const sleeve = { layer: LAYER.GEAR_CLOTH, tint: [1.08, 0.98, 0.74], wear: 0.75, uvScale: 7 };
   const skin = { layer: LAYER.GEAR_CLOTH, tint: [2.6, 1.9, 1.45], wear: 0.35, uvScale: 18 };
 
   // ---------------- right hand on the pistol grip
@@ -378,11 +392,11 @@ export function buildHands(b) {
  * distance and tells the player the pin is already out.
  */
 export function buildGrenadeHand(b) {
-  const glove = { layer: LAYER.GEAR_CLOTH, tint: [1.62, 1.26, 0.92], wear: 0.7, uvScale: 14 };
+  const glove = { layer: LAYER.GEAR_CLOTH, tint: [1.02, 0.83, 0.63], wear: 0.7, uvScale: 14 };
   const gloveHard = { layer: LAYER.POLYMER, tint: [2.05, 1.72, 1.32], wear: 0.6, uvScale: 16 };
-  const sleeve = { layer: LAYER.GEAR_CLOTH, tint: [1.72, 1.58, 1.12], wear: 0.75, uvScale: 7 };
+  const sleeve = { layer: LAYER.GEAR_CLOTH, tint: [1.08, 0.98, 0.74], wear: 0.75, uvScale: 7 };
   const shell = { layer: LAYER.GUNMETAL, tint: [0.46, 0.52, 0.44], wear: 0.5, uvScale: 20 };
-  const steel = { layer: LAYER.GUNMETAL, tint: [0.78, 0.78, 0.76], wear: 0.35, uvScale: 22 };
+  const steel = { layer: LAYER.GUNMETAL, tint: shade(GUNMETAL, 1.30), wear: 0.35, uvScale: 22 };
 
   // ---- the grenade itself
   b.addBlob(0, 0, 0, 0.032, 0.041, 0.032, 10, 8, shell);
@@ -435,14 +449,14 @@ function taperedLimb(b, width, height, length, mat) {
 
 /** Small parts that move independently of the receiver. */
 export function buildBoltCarrier(b) {
-  const metal = { layer: LAYER.GUNMETAL, tint: [0.75, 0.75, 0.76], wear: 0.4, uvScale: 12 };
+  const metal = { layer: LAYER.GUNMETAL, tint: shade(GUNMETAL, 1.22), wear: 0.4, uvScale: 12 };
   b.addBox(0, 0, 0, 0.026, 0.024, 0.060, metal);
   b.addCylinderBetween(V(0, 0, -0.030), V(0, 0, -0.046), 0.0092, 0.0092, 10, metal);
-  b.addBox(0.011, 0.006, 0.008, 0.008, 0.008, 0.026, { ...metal, tint: [0.6, 0.6, 0.6] });
+  b.addBox(0.011, 0.006, 0.008, 0.008, 0.008, 0.026, { ...metal, tint: shade(GUNMETAL, 1.05) });
 }
 
 export function buildChargingHandle(b) {
-  const metal = { layer: LAYER.GUNMETAL, tint: [0.62, 0.62, 0.63], wear: 0.6, uvScale: 12 };
+  const metal = { layer: LAYER.GUNMETAL, tint: shade(GUNMETAL, 1.05), wear: 0.6, uvScale: 12 };
   b.addBox(0, 0, 0, 0.030, 0.010, 0.048, metal);
   b.addBox(-0.020, 0, 0.020, 0.020, 0.012, 0.010, metal);
   b.addBox(0.020, 0, 0.020, 0.020, 0.012, 0.010, metal);
@@ -450,7 +464,7 @@ export function buildChargingHandle(b) {
 }
 
 export function buildMagazine(b) {
-  const poly = { layer: LAYER.POLYMER, tint: [0.92, 0.9, 0.86], wear: 0.6, uvScale: 11 };
+  const poly = { layer: LAYER.POLYMER, tint: shade(FDE, 0.80), wear: 0.6, uvScale: 11 };
   // Stacked slices following the STANAG curve; the banana profile is the single
   // most recognisable part of the silhouette, so it gets the vertices.
   const SEGS = 9;
@@ -458,11 +472,11 @@ export function buildMagazine(b) {
     const t = i / (SEGS - 1);
     const curve = t * t * 0.024;
     b.addBox(0, -t * 0.185 - 0.008, curve, 0.0268 - t * 0.001, 0.026, 0.0405, {
-      ...poly, tint: [0.92 - t * 0.02, 0.90 - t * 0.02, 0.86 - t * 0.02]
+      ...poly, tint: shade(FDE, 0.80 - t * 0.02)
     });
   }
   b.addBox(0, 0.020, -0.002, 0.0292, 0.014, 0.0432, poly);
-  b.addBox(0, -0.200, 0.024, 0.0300, 0.016, 0.0450, { ...poly, tint: [0.7, 0.7, 0.7] });
+  b.addBox(0, -0.200, 0.024, 0.0300, 0.016, 0.0450, { ...poly, tint: shade(BLACK_POLY, 1.30) });
   b.addBox(0, 0.030, -0.004, 0.020, 0.008, 0.036, {
     layer: LAYER.GUNMETAL, tint: [0.8, 0.75, 0.4], wear: 0.3, uvScale: 20
   });
