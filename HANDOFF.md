@@ -65,7 +65,30 @@ against the pixels yourself before building.
   pass); CPU profile healthy (render 1.4ms, AI 1.0ms on a mid machine).
 - **HUD**: clusters glide in on deploy; menu footer restyled as keycaps.
 
-## THE CURSOR TRAP (root cause found on the third report — layer 4)
+## THE CURSOR TRAP — measured, and there is now an OS-side release
+
+**The mechanism is confirmed, with numbers.** On this machine the physical
+desktop is **1920x1200** and the display scaling is **125%**, so the *logical*
+desktop is **1536x960**. A cursor clip written in logical coordinates and
+applied against the physical desktop confines the cursor to the top-left
+1536x960 of the screen — which is exactly the symptom, and exactly the region
+reported. Verified by planting that rectangle with `ClipCursor` and watching
+the cursor behave as described.
+
+No web page can release it: the clip belongs to the browser process, not to the
+document. So the release lives outside the game:
+
+- `tools/unstick-cursor.cmd` — double-click to release it right now.
+- `tools/unstick-cursor.cmd watch` (or `cursor-guard.ps1 -Watch`) — leaves a
+  guard running that releases it whenever it reappears. The guard only fires on
+  this specific signature (anchored at the desktop origin, sized to the desktop
+  divided by the DPI factor, within 3 px) so a real fullscreen game confining
+  the cursor to a monitor is left alone.
+
+Both tested: planting a 1536x960 clip and running the guard released it and
+restored the full 1920x1200.
+
+### Root cause inside the game (layer 4)
 
 **The bug was in this repo, not only in Chromium.** `Game._bindEvents` assigned
 its lock-loss handler to `input.onLockChange`; `Input` only ever calls

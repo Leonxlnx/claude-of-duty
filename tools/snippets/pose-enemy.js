@@ -33,10 +33,20 @@ if (agent) {
 
 // The camera sits at `angle` around the mark; the enemy faces the camera so the
 // front of the kit is what gets judged.
-const camX = MARK.x + Math.sin(cfg.angle) * cfg.distance;
-const camZ = MARK.z + Math.cos(cfg.angle) * cfg.distance;
+//
+// `angle` is measured from the sun rather than from the world axes, so a
+// framing is lit the same way whatever the time of day: 0 puts the sun
+// directly behind the lens. Judging kit colours on a backlit subject is how
+// you conclude that a palette is monochrome when it is the light that is.
+const sun = g.graph.sky.sunDirection;
+const sunAzimuth = Math.atan2(sun.x, sun.z);
+const angle = sunAzimuth + cfg.angle;
+const camX = MARK.x + Math.sin(angle) * cfg.distance;
+const camZ = MARK.z + Math.cos(angle) * cfg.distance;
 const camY = g.world.groundAt(camX, camZ) + 0.1;
-const faceYaw = Math.atan2(camX - MARK.x, camZ - MARK.z);
+// The rig's forward is (-sin yaw, 0, -cos yaw), so facing the camera is the
+// negated delta — with the delta itself the subject turns its back on the lens.
+const faceYaw = Math.atan2(-(camX - MARK.x), -(camZ - MARK.z));
 
 const control = { yaw: faceYaw, pitch: -0.05, stance: cfg.stance, aiming: cfg.aiming };
 
