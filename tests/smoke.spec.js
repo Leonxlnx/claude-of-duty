@@ -92,6 +92,44 @@ test.describe('match lifecycle', () => {
   });
 
   /**
+   * Losing the mouse stops the match, and nothing takes it back on its own.
+   *
+   * This is the regression guard for the cursor trap. The handler existed for
+   * a long time under a property name `Input` never called, so the lock could
+   * end — Escape, alt-tab, a notification — and the game would carry on in
+   * 'playing' with no menu, where the old canvas mousedown listener grabbed
+   * the mouse again on the next click. Asserting the state is not enough: the
+   * point is that the wiring between the two objects is live, so this drives
+   * the real DOM event that the browser fires.
+   */
+  test('losing pointer lock pauses, and a click does not take the mouse back', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 1200);
+    expect((await snapshot(page)).state).toBe('playing');
+
+    // Headless Chromium grants the lock for real, so this is the actual
+    // transition a player gets from Escape rather than a synthesised event.
+    expect(await page.evaluate(() => window.__game.input.locked)).toBe(true);
+    await page.evaluate(() => document.exitPointerLock());
+    await settle(page, 600);
+    expect((await snapshot(page)).state).toBe('paused');
+    await expect(page.locator('#menu')).toBeVisible();
+
+    // A stray click on the game must not re-acquire anything.
+    let requested = 0;
+    await page.exposeFunction('__lockRequested', () => { requested++; });
+    await page.evaluate(() => {
+      const canvas = document.getElementById('scene');
+      const real = canvas.requestPointerLock.bind(canvas);
+      canvas.requestPointerLock = (...a) => { window.__lockRequested(); return real(...a); };
+    });
+    await page.locator('#scene').click({ position: { x: 40, y: 40 }, force: true });
+    await settle(page, 400);
+    expect(requested, 'a click on the canvas asked for the mouse back').toBe(0);
+    expect((await snapshot(page)).state).toBe('paused');
+  });
+
+  /**
    * Every control, once, watching for exceptions.
    *
    * A throw inside the render callback aborts the frame silently: the canvas

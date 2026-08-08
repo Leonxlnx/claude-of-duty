@@ -20,6 +20,7 @@ export class Input {
     this.locked = false;
     this.enabled = true;
     this.onPointerLockChange = null;
+    this.onPointerLockError = null;
     this.onPauseRequested = null;
     // Keys the browser must keep even while the pointer is locked. Everything
     // else is swallowed: crouch is Ctrl, so Ctrl+D bookmarks the page, Ctrl+S
@@ -97,6 +98,15 @@ export class Input {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.releaseLock();
     });
+    // The player can leave fullscreen without us — F11, Escape, the browser's
+    // own bubble. Forgetting that we entered it keeps `_unwind` honest about
+    // what it is allowed to tear down.
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement) {
+        this._enteredFullscreen = false;
+        this._unlockKeyboard();
+      }
+    });
   }
 
   /**
@@ -120,18 +130,58 @@ export class Input {
     // implicated when the visible cursor stays pinned to a corner of the
     // screen after the lock ends on scaled displays. It is opt-in: aim feel
     // costs a preference, a trapped cursor costs the whole session.
-    const attempt = async (options) => {
-      try { await this.canvas.requestPointerLock(options); return true; } catch { return false; }
-    };
     const wantRaw = Settings.data.rawInput === true;
     const ok = wantRaw
-      ? (await attempt({ unadjustedMovement: true }) || await attempt(undefined))
-      : await attempt(undefined);
+      ? (await this._attemptLock({ unadjustedMovement: true }) || await this._attemptLock())
+      : await this._attemptLock();
     if (!ok) {
       // Half-acquired is the dangerous state: fullscreen without pointer lock
       // leaves the browser's cursor confinement with nothing to release it.
       this._unwind();
+      this.onPointerLockError?.();
     }
+  }
+
+  /**
+   * Ask for the lock and resolve with whether it was actually granted.
+   *
+   * Awaiting the return of `requestPointerLock()` does not answer that.
+   * Current Chromium returns a promise; older engines return `undefined`, and
+   * `await undefined` is a resolved `true` — so a refused request reported
+   * success and the game carried on believing it had the mouse. The events are
+   * the only reliable answer. Refusal is a normal outcome here and not an
+   * error: the spec has the browser reject a request made straight after its
+   * own unlock gesture, which is exactly what Escape-then-click looks like.
+   */
+  _attemptLock(options) {
+    return new Promise((resolve) => {
+      const held = () => document.pointerLockElement === this.canvas;
+      let settled = false;
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('pointerlockchange', onChange);
+        document.removeEventListener('pointerlockerror', onError);
+        clearTimeout(timer);
+        resolve(ok);
+      };
+      const onChange = () => finish(held());
+      const onError = () => finish(false);
+      document.addEventListener('pointerlockchange', onChange);
+      document.addEventListener('pointerlockerror', onError);
+      // Neither event is guaranteed to arrive — a headless browser fires
+      // nothing at all — so the wait is bounded and the DOM has the last word.
+      const timer = setTimeout(() => finish(held()), 1500);
+
+      try {
+        const pending = this.canvas.requestPointerLock(options);
+        if (pending && typeof pending.then === 'function') {
+          pending.then(() => finish(held()), () => finish(false));
+        }
+      } catch {
+        finish(false);
+      }
+    });
   }
 
   releaseLock() {

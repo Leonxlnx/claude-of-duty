@@ -411,8 +411,21 @@ export class Game {
     this._applySettings('*');
 
     // ---- input
-    this.input.onLockChange = (locked) => {
+    // Losing the mouse always stops the match. Without this the game stays in
+    // 'playing' with no lock and no menu, and the next click anywhere takes the
+    // mouse straight back — which is the trap from the player's side, whatever
+    // the browser does with its cursor clip underneath. It has to be the name
+    // `Input` actually calls: this was `onLockChange` for a long time, which is
+    // a property nothing reads, so none of it ever ran.
+    this.input.onPointerLockChange = (locked) => {
       if (!locked && this.state === 'playing') this.pause();
+    };
+    // A rejected request is not a lock. Pointer lock is documented to refuse a
+    // request made straight after the browser's own unlock gesture, so pressing
+    // Escape and immediately clicking Resume can land here; going back to the
+    // pause menu asks for one more click instead of running the match blind.
+    this.input.onPointerLockError = () => {
+      if (this.state === 'playing') this.pause();
     };
     window.addEventListener('resize', () => { this._resizePending = true; });
     window.addEventListener('blur', () => { if (this.state === 'playing') this.pause(); });

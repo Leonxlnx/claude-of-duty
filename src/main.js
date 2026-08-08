@@ -19,10 +19,14 @@ window.addEventListener('keydown', (e) => {
   if (game.handleKey?.(e.code)) e.preventDefault();
 }, false);
 
-// Clicking the canvas re-acquires pointer lock after an accidental release.
-canvas.addEventListener('mousedown', () => {
-  if (game.state === 'playing') game.input.requestLock();
-});
+// Nothing here re-acquires pointer lock.
+//
+// This used to relock on any canvas mousedown while the state was 'playing',
+// which combined with a lock-loss handler that never ran meant Escape gave the
+// mouse back and the very next click took it again, with no menu in between.
+// The mouse is now only ever taken from a deliberate press of Deploy or
+// Resume; losing it pauses the match, and it stays lost until asked for.
+void canvas;
 
 game.boot().then(() => {
   window.__game = game;
