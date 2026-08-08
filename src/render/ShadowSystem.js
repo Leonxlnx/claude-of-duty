@@ -95,6 +95,7 @@ export class ShadowSystem {
     if (res === this.resolution) return;
     this.resolution = res;
     this.target.setSize(res, res, this.cascadeCount);
+    this._frame = 0;
   }
 
   /** Practical split scheme blended between uniform and logarithmic. */
@@ -112,7 +113,26 @@ export class ShadowSystem {
     return out;
   }
 
+  /**
+   * Which cascades get refitted and re-rendered this frame.
+   *
+   * The two near cascades carry the player, the weapon's ground shadow and
+   * every fight at talking distance; they update every frame. The far pair
+   * covers the last eighty metres of street, where a shadow map one frame
+   * stale is beneath noticing — texel snapping means a small camera move
+   * usually changes nothing there anyway. Alternating them saves a quarter of
+   * the shadow pass, which renders the whole scene once per cascade, and is
+   * consistently the most expensive line in the frame.
+   */
+  _refreshes(c) {
+    // Until every layer has been drawn at least once, or after the target was
+    // reallocated, there is no "last frame's map" to coast on.
+    if (this._frame < 3 || c < 2) return true;
+    return (this._frame & 1) === (c & 1);
+  }
+
   update(camera, sunDirection) {
+    this._frame = (this._frame | 0) + 1;
     const splits = this.computeSplits(camera.near, this.maxDistance);
     const invView = camera.matrixWorld;
     const tanHalfV = Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
@@ -123,6 +143,10 @@ export class ShadowSystem {
       const nearD = prevSplit;
       const farD = splits[c];
       prevSplit = farD;
+      // A skipped cascade keeps last frame's camera and matrix. Both halves
+      // have to skip together: sampling with a fresher matrix than the map it
+      // samples makes the whole cascade swim.
+      if (!this._refreshes(c)) continue;
 
       // frustum-slice bounding sphere in world space (rotation invariant)
       const xn = nearD * tanHalfH, yn = nearD * tanHalfV;
@@ -223,6 +247,7 @@ export class ShadowSystem {
     renderer.setClearColor(0xffffff, 1);
 
     for (let c = 0; c < this.cascadeCount; c++) {
+      if (!this._refreshes(c)) continue;
       renderer.setRenderTarget(this.target, c);
       renderer.clear(true, true, false);
       renderer.render(scene, this.cameras[c]);

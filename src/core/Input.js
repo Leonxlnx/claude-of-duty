@@ -78,7 +78,7 @@ export class Input {
       this.locked = document.pointerLockElement === this.canvas;
       if (this.locked) this._lockKeyboard();
       else {
-        this._unlockKeyboard();
+        this._unwind();
         this.keys.clear();
         this.buttons = [false, false, false];
       }
@@ -87,6 +87,11 @@ export class Input {
     window.addEventListener('blur', () => {
       this.keys.clear();
       this.buttons = [false, false, false];
+    });
+    // A hidden tab must hold nothing. Anything left engaged here is exactly
+    // the state that outlives the tab in the compositor.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.releaseLock();
     });
   }
 
@@ -101,7 +106,10 @@ export class Input {
   async requestLock() {
     if (this.locked) return;
     if (!document.fullscreenElement && Settings.data.fullscreenOnPlay !== false) {
-      try { await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); } catch { /* denied or unsupported */ }
+      try {
+        await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+        this._enteredFullscreen = true;
+      } catch { /* denied or unsupported */ }
     }
     // Raw mouse input is the one we want, but it is not everywhere, and both
     // the call and the promise it may or may not return can fail. Every path
@@ -109,11 +117,35 @@ export class Input {
     const attempt = async (options) => {
       try { await this.canvas.requestPointerLock(options); return true; } catch { return false; }
     };
-    if (!await attempt({ unadjustedMovement: true })) await attempt(undefined);
+    if (!await attempt({ unadjustedMovement: true }) && !await attempt(undefined)) {
+      // Half-acquired is the dangerous state: fullscreen without pointer lock
+      // leaves the browser's cursor confinement with nothing to release it.
+      this._unwind();
+    }
   }
 
   releaseLock() {
     if (document.pointerLockElement) document.exitPointerLock();
+    else this._unwind();
+  }
+
+  /**
+   * Give back everything the lock took, together and in order.
+   *
+   * Chromium confines the OS cursor with a clip rectangle while the pointer is
+   * locked in fullscreen, and on displays with scaling that rectangle is
+   * computed in the wrong units — releasing only the pointer lock can leave a
+   * stale clip pinning the visible cursor into the top-left quarter of the
+   * screen until something else resets it. Tearing down keyboard lock and the
+   * fullscreen we entered whenever the pointer lock ends forces the browser to
+   * recompute, which is the only page-side lever there is.
+   */
+  _unwind() {
+    this._unlockKeyboard();
+    if (this._enteredFullscreen && document.fullscreenElement) {
+      this._enteredFullscreen = false;
+      document.exitFullscreen().catch(() => { /* already gone */ });
+    }
   }
 
   /**
