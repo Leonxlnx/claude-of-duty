@@ -89,8 +89,19 @@ export function installHarness(game) {
     },
 
     teleport(x, y, z) {
-      game.player.controller.position.set(x, y, z);
-      game.player.controller.velocity.set(0, 0, 0);
+      const p = game.player;
+      p.controller.position.set(x, y, z);
+      p.controller.velocity.set(0, 0, 0);
+      // Bring the eye with it, now, rather than at the next rendered frame.
+      // `eye` is a render-time interpolation, so straight after a teleport it
+      // still holds the old position — and `aimAt` reads it. Every caller that
+      // teleported and then aimed was therefore aiming from where it used to
+      // be, which is how a composed screenshot ends up pointing at a wall and
+      // two capture rounds end up impossible to compare.
+      p._prevPosition.set(x, y, z);
+      p._renderPosition.set(x, y, z);
+      p._eyeY = null;
+      p.eye.set(x, y + p.heightSpring.value, z);
     },
 
     /**

@@ -77,10 +77,31 @@ function groundLayerAt(x, z) {
   return sand > 0.48 ? LAYER.SAND : LAYER.GRAVEL;
 }
 
+/**
+ * Ground colour. Three scales, because one was not enough.
+ *
+ * A single low-frequency noise over the whole district gives a soft blotch
+ * that reads as a cloud layer rather than as ground, and the road and the
+ * plaza came out as one flat tan across half the frame. A metre-scale band
+ * breaks the large shapes, a decimetre-scale band gives it grain at the
+ * distance a player actually stands, and the wheel ruts either side of the
+ * road crown darken and desaturate the way packed earth does against the
+ * loose sand that drifts to the kerbs.
+ */
 function groundTintAt(x, z) {
-  const n = fbm2(x * 0.13 - 11, z * 0.13 + 5, 3, 0.55);
-  const k = 0.86 + n * 0.3;
-  return [k, k * 0.995, k * 0.97];
+  const broad = fbm2(x * 0.13 - 11, z * 0.13 + 5, 3, 0.55);
+  const fine = fbm2(x * 0.85 + 23, z * 0.85 - 17, 2, 0.5);
+  let k = 0.84 + broad * 0.30 + (fine - 0.5) * 0.11;
+
+  // Two ruts where traffic runs, packed darker than the drifted edges.
+  const ax = Math.abs(x);
+  const rut = Math.exp(-Math.pow((ax - 3.4) / 1.5, 2));
+  const wander = (fbm2(z * 0.05, 0, 2, 0.5) - 0.5) * 0.5;
+  const packed = rut * (0.75 + wander) * (1 - smoothstep(6.6, 8.0, ax));
+  k *= 1 - packed * 0.17;
+
+  // Packed ground is cooler as well as darker; loose sand keeps its warmth.
+  return [k, k * (0.995 - packed * 0.012), k * (0.97 + packed * 0.03)];
 }
 
 /** Subdivide a band of Z into building lots, skipping the supplied gaps. */

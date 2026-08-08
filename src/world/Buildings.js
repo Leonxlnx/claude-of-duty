@@ -415,32 +415,46 @@ export function generateBuilding(opts) {
   }
 
   // ---- roof clutter
+  //
+  // Sized and placed to be seen from the street, which is the only place
+  // anybody looks at it from. There was always clutter up here; almost none of
+  // it cleared the parapet, so every roofline still cut the sky as a hard
+  // horizontal and the whole district read as a row of boxes. Everything is
+  // taller now, and the tall silhouette-breakers are the common cases rather
+  // than the rare ones.
   const rooftop = [];
-  const clutterCount = rng.int(2, 6);
+  const clutterCount = rng.int(4, 8);
   for (let i = 0; i < clutterCount; i++) {
     const px = rng.range(x0 + 1.2, x1 - 1.2);
     const pz = rng.range(z0 + 1.2, z1 - 1.2);
     const kind = rng.next();
-    if (kind < 0.3) {
-      // water tank on a low stand
-      const r = rng.range(0.45, 0.68);
-      const hh = rng.range(0.8, 1.2);
-      detail.addBox(px, height + 0.28, pz, r * 1.7, 0.36, r * 1.7, { layer: LAYER.METAL_RUST, tint: [0.6, 0.6, 0.6], wear: 0.9, uvScale: 1.2 });
-      detail.addCylinder(px, height + 0.46, pz, r, r, hh, 12, { layer: LAYER.METAL_PAINTED, tint: rng.pick([[0.30, 0.42, 0.55], [0.65, 0.62, 0.55], [0.35, 0.38, 0.36]]), wear: 0.7, uvScale: 0.8 });
-      builder.addCollisionBox(px, height + 0.46 + hh * 0.5, pz, r * 1.8, hh, r * 1.8, SURFACE.METAL);
-    } else if (kind < 0.5) {
+    if (kind < 0.32) {
+      // water tank on a stand — the stand is what lifts it over the parapet
+      const r = rng.range(0.5, 0.72);
+      const hh = rng.range(1.2, 1.8);
+      const stand = rng.range(0.7, 1.1);
+      for (const [ox, oz] of [[-r * 0.7, -r * 0.7], [r * 0.7, -r * 0.7], [r * 0.7, r * 0.7], [-r * 0.7, r * 0.7]]) {
+        detail.addBox(px + ox, height + stand * 0.5, pz + oz, 0.08, stand, 0.08, {
+          layer: LAYER.METAL_RUST, tint: [0.52, 0.5, 0.47], wear: 0.9, uvScale: 2
+        });
+      }
+      detail.addBox(px, height + stand, pz, r * 1.7, 0.12, r * 1.7, { layer: LAYER.METAL_RUST, tint: [0.6, 0.6, 0.6], wear: 0.9, uvScale: 1.2 });
+      detail.addCylinder(px, height + stand + 0.12, pz, r, r, hh, 12, { layer: LAYER.METAL_PAINTED, tint: rng.pick([[0.30, 0.42, 0.55], [0.65, 0.62, 0.55], [0.35, 0.38, 0.36]]), wear: 0.7, uvScale: 0.8 });
+      builder.addCollisionBox(px, height + stand + 0.12 + hh * 0.5, pz, r * 1.8, hh, r * 1.8, SURFACE.METAL);
+    } else if (kind < 0.52) {
       // roof access stair box
-      const bw = rng.range(1.6, 2.4), bd = rng.range(1.6, 2.2), bh = rng.range(2.0, 2.5);
+      const bw = rng.range(1.8, 2.6), bd = rng.range(1.7, 2.3), bh = rng.range(2.4, 3.1);
       detail.addBox(px, height + bh * 0.5, pz, bw, bh, bd, { layer: style.layer, tint: mul(style.tint, 0.95), wear, uvScale: 0.5 });
       builder.addCollisionBox(px, height + bh * 0.5, pz, bw, bh, bd, SURFACE.PLASTER);
-    } else if (kind < 0.68) {
+    } else if (kind < 0.66) {
       // satellite dish
-      const mh = rng.range(0.5, 0.9);
+      const mh = rng.range(1.1, 1.8);
       detail.addCylinder(px, height + 0.12, pz, 0.05, 0.05, mh, 6, { layer: LAYER.METAL_RUST, tint: [0.6, 0.6, 0.6], wear: 0.8, uvScale: 2 });
       detail.addBlob(px + 0.22, height + 0.12 + mh, pz, 0.42, 0.42, 0.12, 12, 6, { layer: LAYER.METAL_PAINTED, tint: [0.9, 0.89, 0.86], wear: 0.5, uvScale: 1 });
-    } else if (kind < 0.84) {
-      // antenna mast with guy struts
-      const mh = rng.range(1.8, 3.4);
+    } else if (kind < 0.88) {
+      // antenna mast with guy struts — the cheapest thing that breaks a
+      // roofline, so it is the one that got taller and more common
+      const mh = rng.range(3.2, 5.6);
       detail.addCylinder(px, height + 0.12, pz, 0.045, 0.02, mh, 5, { layer: LAYER.METAL_RUST, tint: [0.55, 0.55, 0.55], wear: 0.85, uvScale: 3 });
       for (let k = 0; k < 3; k++) {
         const a = (k / 3) * Math.PI * 2 + rng.next();

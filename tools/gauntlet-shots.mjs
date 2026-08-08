@@ -24,7 +24,9 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 page.on('pageerror', (e) => console.log(`[pageerror] ${e.message}`));
 
-await page.goto(`http://localhost:${port}/?auto=1&dynres=0`, { waitUntil: 'load' });
+// `nomb` because every pose teleports, and one frame of enormous camera
+// velocity smears the whole shot; motion blur has nothing to say about a still.
+await page.goto(`http://localhost:${port}/?auto=1&dynres=0&nomb`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__ready === true, { timeout: 180000 });
 
 // Full resolution, highest preset: judge the game, not the test rig.
@@ -32,10 +34,21 @@ await page.evaluate(async () => {
   const h = window.__harness, g = window.__game;
   h.setQuality('ultra');
   h.setSetting('dynres', false);
+  h.setSetting('showFps', false);   // the perf readout is not part of the game
+  g.hud.setVisible(false);          // nor is the rest of it: judge the world
   g.graph.setRenderScale?.(1);
   g.player.spawnProtect = 1e9;
+  // Agents wandering through a composed frame make two rounds incomparable.
+  h.freezeAI(true);
   await new Promise((r) => setTimeout(r, 600));
 });
+
+/** Wait for `n` presented frames, however long each one takes. */
+const frames = (n) => page.evaluate((count) => new Promise((resolve) => {
+  let seen = 0;
+  const tick = () => (++seen >= count ? resolve(seen) : requestAnimationFrame(tick));
+  requestAnimationFrame(tick);
+}), n);
 
 /** Teleport, face something, let the springs settle, photograph. */
 const POSES = {
@@ -84,8 +97,9 @@ for (const [name, pose] of Object.entries(POSES)) {
     const fn = new Function('g', 'h', `return (async () => { ${body} })();`);
     await fn(window.__game, window.__harness);
   }, `await (${pose.toString()})(g, h);`);
-  // Springs, TAA history and exposure all need real frames to settle.
-  await page.waitForTimeout(2600);
+  // Springs, TAA history and exposure all need real frames to settle, and
+  // under a software rasteriser a wall-clock wait is not enough of them.
+  await frames(45);
   await page.screenshot({ path: `${outDir}/${name}.png` });
   console.log(`captured ${outDir}/${name}.png`);
 }

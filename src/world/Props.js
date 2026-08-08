@@ -100,10 +100,17 @@ export function marketStall(b, cloth, x, y, z, rotY, rng, w = 2.6, d = 1.8) {
   });
   b.addBox(x, y + tableH * 0.5, z, w * 0.9, 0.05, 0.05, { rotY, layer: LAYER.WOOD, tint: postTint, wear: 0.8, uvScale: 2 });
 
-  // trays / baskets / sacks on the table
-  const items = rng.int(2, 5);
+  // Goods on the table.
+  //
+  // Two to five items scattered anywhere on the counter left most of a
+  // three-metre bench bare, and a market where nothing is for sale is the
+  // loudest placeholder signal a shot can carry. The count now scales with the
+  // counter and the positions are spread along it in slots rather than drawn
+  // independently, so goods cannot clump at one end and leave the rest empty.
+  const items = Math.max(4, Math.round(w * rng.range(2.0, 2.8)));
   for (let i = 0; i < items; i++) {
-    const lx = rng.range(-w * 0.38, w * 0.38);
+    const slot = (i + rng.range(0.15, 0.85)) / items;
+    const lx = (slot - 0.5) * w * 0.86;
     const lz = rng.range(-d * 0.26, d * 0.26);
     const px = x + lx * cos + lz * sin;
     const pz = z - lx * sin + lz * cos;
@@ -124,6 +131,34 @@ export function marketStall(b, cloth, x, y, z, rotY, rng, w = 2.6, d = 1.8) {
     } else {
       b.addBlob(px, y + tableH + 0.16, pz, 0.19, 0.16, 0.15, 8, 5, {
         layer: LAYER.SANDBAG, tint: [0.9, 0.85, 0.72], wear: 0.8, uvScale: 1.4
+      });
+    }
+  }
+
+  // Goods hung off the top rail. A stall is as much vertical as horizontal,
+  // and this is what fills the empty band between the counter and the awning
+  // that otherwise reads as a hollow void on posts.
+  const hung = rng.int(2, 5);
+  for (let i = 0; i < hung; i++) {
+    const lx = ((i + rng.range(0.2, 0.8)) / hung - 0.5) * w * 0.9;
+    const lz = -d * 0.5 + 0.06;
+    const px = x + lx * cos + lz * sin;
+    const pz = z - lx * sin + lz * cos;
+    const len = rng.range(0.28, 0.62);
+    // the cord it hangs from
+    b.addCylinder(px, y + postH - len * 0.5, pz, 0.008, 0.008, len, 4, {
+      layer: LAYER.WOOD, tint: [0.42, 0.38, 0.32], wear: 0.9, uvScale: 4, caps: false
+    });
+    if (rng.bool(0.55)) {
+      // a bundle of cloth or dried goods
+      b.addBlob(px, y + postH - len - 0.11, pz, 0.10, 0.14, 0.09, 7, 4, {
+        layer: LAYER.FABRIC, tint: rng.pick(FABRIC_TINTS), wear: 0.7, uvScale: 3
+      });
+    } else {
+      // a pot or lantern
+      b.addCylinder(px, y + postH - len - 0.09, pz, 0.07, 0.055, 0.16, 8, {
+        layer: LAYER.METAL_PAINTED, tint: rng.pick([[0.72, 0.58, 0.28], [0.55, 0.53, 0.5], [0.35, 0.3, 0.26]]),
+        wear: 0.75, uvScale: 2.5
       });
     }
   }
