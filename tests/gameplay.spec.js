@@ -33,7 +33,7 @@ test.describe('movement', () => {
     const eyeOf = () => page.evaluate(() => window.__game.player.eye.y);
     const standing = await eyeOf();
 
-    await page.evaluate(() => window.__harness.key('ControlLeft', true));
+    await page.evaluate(() => window.__harness.key('KeyC', true));
     await settle(page, 700);
     const crouched = await eyeOf();
     expect(standing - crouched).toBeGreaterThan(0.3);

@@ -51,7 +51,16 @@ const DEFAULTS = {
   keybinds: {
     fire: 'Mouse0', aim: 'Mouse2',
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
-    jump: 'Space', crouch: 'ControlLeft', sprint: 'ShiftLeft', slide: 'KeyC',
+    // Crouch is C, not Ctrl.
+    //
+    // A page cannot cancel Ctrl+W — it is reserved by the browser and never
+    // reaches the document — so with crouch on Ctrl, crouch-walking forward
+    // closed the tab. Ctrl+D, Ctrl+S, Ctrl+P and Ctrl+N are all reachable the
+    // same way. C already doubles as the slide key and the movement code has
+    // always treated the two as one intent (`crouch || slide`): tapped while
+    // still it crouches, held out of a sprint it slides. Sharing the bind
+    // matches the mechanic and leaves Ctrl unbound.
+    jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft', slide: 'KeyC',
     reload: 'KeyR', inspect: 'KeyF', fireMode: 'KeyV', grenade: 'KeyB',
     leanLeft: 'KeyQ', leanRight: 'KeyE', pause: 'Escape', scoreboard: 'Tab'
   },
@@ -74,12 +83,38 @@ class SettingsStore {
       if (raw) {
         const parsed = JSON.parse(raw);
         this.data = { ...deepClone(DEFAULTS), ...parsed, keybinds: { ...DEFAULTS.keybinds, ...(parsed.keybinds || {}) } };
+        this._retireControlBinds();
       }
     } catch { /* storage unavailable — defaults are fine */ }
     const params = new URLSearchParams(location.search);
     if (params.has('quality')) this.data.quality = params.get('quality');
     if (params.has('grain')) this.data.filmGrain = parseFloat(params.get('grain'));
     if (params.has('dynres')) this.data.dynamicResolution = params.get('dynres') !== '0';
+  }
+
+  /**
+   * Take Ctrl off any movement action a stored profile still has on it.
+   *
+   * Changing the default is not enough on its own: stored keybinds are spread
+   * over the defaults, so anyone who has played before keeps the old bind
+   * forever and keeps closing their tab. This rewrites it once, on load, and
+   * the result is saved so it does not run again.
+   *
+   * Only the movement actions, and only Ctrl. A player who deliberately binds
+   * Ctrl to something they do not press with W is left alone — the warning in
+   * the rebinding UI is enough there.
+   */
+  _retireControlBinds() {
+    const CTRL = new Set(['ControlLeft', 'ControlRight']);
+    const SAFE = { crouch: 'KeyC', forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', sprint: 'ShiftLeft' };
+    let changed = false;
+    for (const [action, fallback] of Object.entries(SAFE)) {
+      if (CTRL.has(this.data.keybinds[action])) {
+        this.data.keybinds[action] = fallback;
+        changed = true;
+      }
+    }
+    if (changed) this.save();
   }
 
   save() {

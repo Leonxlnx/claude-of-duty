@@ -138,6 +138,18 @@ export class Menu {
     Settings.set('keybinds', binds);
     const el = this.el.querySelector(`.bind-key[data-action="${action}"]`);
     if (el) el.innerHTML = keyLabel(code);
+    // Ctrl is the browser's, not ours. Ctrl+W closes the tab, Ctrl+T opens
+    // one, Ctrl+D bookmarks — and none of those keydowns ever reach the page,
+    // so no amount of preventDefault stops them. The player can still choose
+    // it; they just get told what it costs.
+    if (el && (code === 'ControlLeft' || code === 'ControlRight')) {
+      el.classList.add('bind-risky');
+      el.title = 'The browser keeps Ctrl shortcuts. Held with W this closes the tab, '
+        + 'and a page cannot prevent it.';
+    } else if (el) {
+      el.classList.remove('bind-risky');
+      el.title = '';
+    }
     this.audio?.playUI('click');
   }
 
@@ -467,7 +479,7 @@ const TEMPLATE = /* html */`
   </div>
 </div>
 <div class="menu-footer">
-  <div><kbd>WASD</kbd> move &nbsp; <kbd>SHIFT</kbd> sprint &nbsp; <kbd>CTRL</kbd> crouch &nbsp; <kbd>C</kbd> slide &nbsp; <kbd>SPACE</kbd> jump</div>
+  <div><kbd>WASD</kbd> move &nbsp; <kbd>SHIFT</kbd> sprint &nbsp; <kbd>C</kbd> crouch, or slide out of a sprint &nbsp; <kbd>SPACE</kbd> jump</div>
   <div><kbd>Q</kbd> <kbd>E</kbd> peek round corners &nbsp; <kbd>LMB</kbd> fire &nbsp; <kbd>RMB</kbd> aim</div>
   <div><kbd>B</kbd> grenade, hold <kbd>LMB</kbd> for range &nbsp; <kbd>R</kbd> reload &nbsp; <kbd>V</kbd> fire mode &nbsp; <kbd>F</kbd> inspect</div>
   <div><kbd>TAB</kbd> scoreboard &nbsp; <kbd>ESC</kbd> pause, <kbd>ENTER</kbd> resume, <kbd>Q</kbd> abandon</div>

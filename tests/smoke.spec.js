@@ -134,6 +134,37 @@ test.describe('match lifecycle', () => {
   });
 
   /**
+   * No default bind hands a key to the browser.
+   *
+   * Crouch was Ctrl and forward is W, so crouch-walking forward pressed
+   * Ctrl+W and the tab closed mid-match. A page cannot prevent that: the
+   * browser reserves it and the keydown never reaches the document. The only
+   * real fix is not to bind the modifier, and a stored profile from before the
+   * change has to be migrated too, or the player keeps the old bind forever.
+   */
+  test('no default keybind collides with a browser shortcut', async ({ page }) => {
+    await boot(page);
+
+    const binds = await page.evaluate(() => window.__settings.data.keybinds);
+    const reserved = ['ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight', 'AltLeft', 'AltRight'];
+    for (const [action, code] of Object.entries(binds)) {
+      expect(reserved, `${action} is bound to a browser-reserved modifier`).not.toContain(code);
+    }
+
+    // And a profile saved with the old bind is repaired on load rather than
+    // spread back over the defaults.
+    const migrated = await page.evaluate(() => {
+      const key = Object.keys(localStorage).find((k) => k.startsWith('dust-corridor.settings'));
+      const stored = JSON.parse(localStorage.getItem(key) || '{}');
+      stored.keybinds = { ...(stored.keybinds || {}), crouch: 'ControlLeft' };
+      localStorage.setItem(key, JSON.stringify(stored));
+      window.__settings.load();
+      return window.__settings.data.keybinds.crouch;
+    });
+    expect(migrated, 'a stored Ctrl crouch survived a reload').not.toBe('ControlLeft');
+  });
+
+  /**
    * Every control, once, watching for exceptions.
    *
    * A throw inside the render callback aborts the frame silently: the canvas
@@ -160,7 +191,7 @@ test.describe('match lifecycle', () => {
       await hold(['KeyW', 'ShiftLeft'], 0.7);        // sprint
       await hold(['KeyW', 'ShiftLeft', 'KeyC'], 0.6); // slide out of a sprint
       await hold(['Space'], 0.5);                    // airborne
-      await hold(['ControlLeft', 'KeyW'], 0.35);     // crouch-walk
+      await hold(['KeyC', 'KeyW'], 0.35);     // crouch-walk
       await hold(['KeyQ'], 0.3);                     // peek
 
       h.fire(true); await wait(0.3); h.fire(false);

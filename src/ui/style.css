@@ -593,6 +593,8 @@ input[type="range"]::-moz-range-thumb {
 }
 .bind-key:hover { border-color: var(--accent); color: var(--accent); }
 .bind-key.listening { border-color: var(--accent); color: var(--accent); animation: blink 900ms infinite; }
+/* A bind the browser will intercept before the game ever sees it. */
+.bind-key.bind-risky { border-color: #b4553f; color: #d8795e; }
 @keyframes blink { 50% { opacity: 0.35; } }
 
 /* --- match end / scoreboard table */
