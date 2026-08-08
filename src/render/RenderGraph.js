@@ -257,8 +257,19 @@ export class RenderGraph {
     this.taaHistory = new THREE.WebGLRenderTarget(rw, rh, hdrOpts);
     this.blurTarget = new THREE.WebGLRenderTarget(rw, rh, hdrOpts);
 
-    const aoW = Math.max(2, Math.floor(rw * 0.5));
-    const aoH = Math.max(2, Math.floor(rh * 0.5));
+    // Ambient occlusion never benefits from supersampling.
+    //
+    // It is a low-frequency visibility term that gets bilaterally blurred and
+    // multiplied into the ambient, so resolving it above the display buys
+    // nothing the blur does not immediately throw away — but it was sized off
+    // the *render* target, so at level 8 five AO passes (march, two blurs,
+    // temporal, blit) ran at 0.8x native instead of 0.5x. Capping the source
+    // at the display size before halving cuts their pixel count by about 60%
+    // at 1.6x and more above it, and the frame looks identical.
+    const aoBase = Math.min(rw, width);
+    const aoBaseH = Math.min(rh, height);
+    const aoW = Math.max(2, Math.floor(aoBase * 0.5));
+    const aoH = Math.max(2, Math.floor(aoBaseH * 0.5));
     const aoOpts = {
       type: THREE.HalfFloatType, format: THREE.RGBAFormat,
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false
@@ -272,15 +283,21 @@ export class RenderGraph {
     this.tileTarget = new THREE.WebGLRenderTarget(tw, th, aoOpts);
     this.tileDilated = new THREE.WebGLRenderTarget(tw, th, aoOpts);
 
+    // Bloom is a blur pyramid: like AO it cannot show detail the display can
+    // resolve, so its base is capped at the display size rather than the
+    // supersampled one. Twelve targets and twelve passes at 2.56x the pixels
+    // bought nothing visible.
+    const bloomBaseW = Math.min(rw, width);
+    const bloomBaseH = Math.min(rh, height);
     this.bloomTargets = [];
-    let bw = Math.max(2, rw >> 1), bh = Math.max(2, rh >> 1);
+    let bw = Math.max(2, bloomBaseW >> 1), bh = Math.max(2, bloomBaseH >> 1);
     for (let i = 0; i < BLOOM_LEVELS; i++) {
       this.bloomTargets.push(new THREE.WebGLRenderTarget(bw, bh, hdrOpts));
       bw = Math.max(2, bw >> 1);
       bh = Math.max(2, bh >> 1);
     }
     this.bloomUpTargets = [];
-    bw = Math.max(2, rw >> 1); bh = Math.max(2, rh >> 1);
+    bw = Math.max(2, bloomBaseW >> 1); bh = Math.max(2, bloomBaseH >> 1);
     for (let i = 0; i < BLOOM_LEVELS; i++) {
       this.bloomUpTargets.push(new THREE.WebGLRenderTarget(bw, bh, hdrOpts));
       bw = Math.max(2, bw >> 1); bh = Math.max(2, bh >> 1);

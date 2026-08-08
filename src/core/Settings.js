@@ -64,9 +64,13 @@ export const QUALITY_LEVELS = [
     cloudSteps: 64, particleDensity: 1.75, motionBlur: 'off', bloom: true, taa: true,
     contactShadows: true, decalBudget: 576, maxRigidBodies: 380, heatHaze: true, sharpen: 0.40
   },
-  { // 8
-    renderScale: 1.6, shadowResolution: 4096, shadowCascades: 5, aoSamples: 20, aoEnabled: true,
-    cloudSteps: 72, particleDensity: 1.9, motionBlur: 'off', bloom: true, taa: true,
+  { // 8 — the intended "looks great and still plays" level
+    // Four cascades, not five. A fifth is an entire extra shadow render of the
+    // scene for detail at a distance where the supersampling has already done
+    // the visible work, and it was a large part of why 8 fell off a cliff
+    // relative to 6.
+    renderScale: 1.6, shadowResolution: 4096, shadowCascades: 4, aoSamples: 16, aoEnabled: true,
+    cloudSteps: 64, particleDensity: 1.8, motionBlur: 'off', bloom: true, taa: true,
     contactShadows: true, decalBudget: 640, maxRigidBodies: 420, heatHaze: true, sharpen: 0.42
   },
   { // 9
