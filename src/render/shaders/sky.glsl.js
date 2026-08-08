@@ -111,13 +111,37 @@ float cloudShape(vec3 p){
   float base = fbm3(q, 4, 0.55) * smoothstep(0.40, 0.68, mass);
   float detail = fbm3(q * 4.2 + 13.7, 3, 0.5);
   float heightFrac = clamp((p.y - CLOUD_BOTTOM) / (CLOUD_TOP - CLOUD_BOTTOM), 0.0, 1.0);
-  // cumulus profile: rounded bottom, billowing top, hard-ish anvil cutoff
-  float profile = smoothstep(0.0, 0.18, heightFrac) * (1.0 - smoothstep(0.55, 1.0, heightFrac));
-  float d = base * profile;
+
+  // Cumulus profile.
+  //
+  // The base is nearly flat, because it sits at the condensation level and the
+  // whole field shares it — that shared horizontal cut is most of what makes a
+  // sky read as cumulus rather than as fog. A soft 0.0-0.18 ramp gave every
+  // cloud a rounded underside and the deck looked like floating cotton. The
+  // top is the opposite: it billows, so the profile widens through the middle
+  // before the anvil cuts it off.
+  float flatBase = smoothstep(0.0, 0.045, heightFrac);
+  float billow = 1.0 + 0.45 * smoothstep(0.15, 0.62, heightFrac);
+  float anvil = 1.0 - smoothstep(0.70, 1.0, heightFrac);
+  float profile = flatBase * anvil;
+  float d = base * profile * billow;
+
   // A tighter band gives cumulus a defined edge instead of a haze gradient.
   d = smoothstep(uCoverage, uCoverage + 0.20, d);
-  d -= detail * 0.26 * (1.0 - heightFrac * 0.6);
-  return clamp(d, 0.0, 1.0);
+
+  // Erode, rather than subtract.
+  //
+  // Subtracting the detail noise thinned the dense core as much as the edges,
+  // which rounds everything off. Remapping against it instead eats into the
+  // low-density fringe and leaves the core intact, which is what gives cumulus
+  // their cauliflower edge — and the erosion strengthens with height so the
+  // billowing top is broken up while the flat base stays clean.
+  // Kept modest: the remap eats the whole deck long before it looks like
+  // cauliflower, because it removes density everywhere the fringe reaches,
+  // not only at the silhouette.
+  float erosion = detail * mix(0.07, 0.26, heightFrac);
+  d = clamp((d - erosion) / max(1.0 - erosion, 0.05), 0.0, 1.0);
+  return d;
 }
 
 void main(){
@@ -171,7 +195,15 @@ void main(){
       float lit = sunTrans * (phase * 1.6 + 0.42) * 0.62 + 0.075;
       vec3 cloudSun = mix(vec3(1.0), uSunColor, 0.3);
       vec3 lightCol = cloudSun * uSunIntensity * lit * mix(0.62, 1.0, powder);
-      lightCol += vec3(0.42, 0.52, 0.74) * 1.05;   // sky bounce into the cloud
+      // Sky bounce into the cloud, weighted by height.
+      //
+      // A constant term lit the undersides as brightly as the tops, and a
+      // cumulus with an evenly lit base is the single clearest tell that it is
+      // a noise field rather than weather. Real bases are markedly darker and
+      // cooler than the sunlit crowns, because almost nothing reaches them but
+      // scattered skylight.
+      float hFrac = clamp((p.y - CLOUD_BOTTOM) / (CLOUD_TOP - CLOUD_BOTTOM), 0.0, 1.0);
+      lightCol += vec3(0.40, 0.50, 0.74) * mix(0.34, 1.25, hFrac);
       float extinct = exp(-density * dt * 0.0052);
       scattered += transmittance * (1.0 - extinct) * lightCol;
       transmittance *= extinct;

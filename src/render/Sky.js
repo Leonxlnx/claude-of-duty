@@ -175,8 +175,11 @@ export class Sky {
     // uCoverage is the density threshold the marched noise has to clear, so it
     // runs opposite to how much of the sky ends up covered. The slow sine
     // breathes the cloud deck over a couple of minutes.
+    // Threshold lowered to pay for the erosion pass: remapping against the
+    // detail noise removes real density as well as rounding the fringe, so at
+    // the old threshold the deck thinned out to a few wisps.
     this.cloudPass.uniforms.uCoverage.value =
-      0.60 - this.cloudCoverage * 0.42 + Math.sin(time * 0.006) * 0.025;
+      0.52 - this.cloudCoverage * 0.42 + Math.sin(time * 0.006) * 0.025;
     this.cloudShadowOffset.x += this.wind.x * dt * 0.0016;
     this.cloudShadowOffset.y += this.wind.y * dt * 0.0016;
   }
