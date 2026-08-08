@@ -121,7 +121,60 @@ render-time interpolation, so every pose was aimed from where the camera used
 to be, and the framing depended on the previous shot — rounds were not
 comparable), and the HUD is hidden for captures.
 
-## Round 5 — candidates
+## Round 5 — bounce light, weathering, canopies (done)
+
+Ground-bounce ambient (the barriers read as concrete instead of blue-grey
+slabs); splash zone, drip staining and blown-render in the world shader, which
+weathers the whole district at once; canopies with varied height, span, sag and
+post material, hung at 2.45–2.95 m so the shade belongs to the stall under it.
+
+Two traps: `patch` is a reserved word in GLSL, and a backtick in a comment
+inside the shader's template literal ends the string. **A shader that fails to
+link still produces a plausible-looking screenshot** — build and run the smoke
+test before believing a capture.
+
+## Rounds 6–7 — two measuring critics (done)
+
+These critics sampled actual pixel values, which made their claims checkable.
+Three were real and are fixed: chromatic aberration had a constant term so the
+frame centre got separation too (window grilles read as saturated red/blue
+candy stripes); there was no output dither anywhere, so the sky quantised into
+40–60 px plateaus; and the sky's multiple-scattering Mie share had no phase
+function, putting a salmon sunset band right around the horizon.
+
+A fourth — "AO is multiplying the direct term", argued from measurements — was
+**wrong**. Line 36 of the composite multiplies AO into the ambient only. Two
+rounds running, a confident critic finding has been a misdiagnosis; check
+before building.
+
+Round 6 also fixed what round 5's bounce exposed: ground normals point up and
+so received no bounce, leaving shaded ground under pure Rayleigh sky — the
+alley floor came out **teal**. Sky irradiance is now pulled 40% toward its own
+luminance with a slight warm bias.
+
+## Round 8 — candidates
+
+**Both critics named the same single biggest change, and it is still open:
+exposure and tonemap.** Measured, sunlit sand sits at ~118–129 sRGB (middle
+grey) and the 99th-percentile luminance of a whole frame is 183–196 — nothing
+in any shot is white, there is no highlight anywhere, while deep shade crushes
+to ~24–30. Real midday sun-to-open-shade is 5–8:1; parts of these frames are at
+55:1. The fix is a tonemap shoulder that lets sunlit plaster roll off toward
+245–252 plus enough ambient that open shade lands at luminance 70–90 rather
+than near-black. Everything else is amplified by this: materials look flat
+partly because no raking highlight ever forms on them.
+
+Then, in the critics' order:
+- Walls have no relief — no normal map at mid scale, so a raking sun produces
+  nothing. Same blob frequency at 2 m and at 40 m.
+- The viewmodel is an untextured blockout in the strongest read position of
+  every frame: white barrel (should be the darkest part), flat black slab, no
+  edge wear, no AO in the hand/grip junction.
+- Props float: awning posts cut off above the sand, hanging goods with no rope,
+  palms as flat cardboard fans. Ray-cast pivots down at spawn and add a contact
+  darkening decal.
+- Both wide shots dead-end in a blank slab exactly where the composition funnels
+  the eye. Needs a focal object — minaret, arched gate, wreck.
 
 - The flat blue-grey barrier slabs in the street still have no material
   identity — they could be plastic, metal or stone.
