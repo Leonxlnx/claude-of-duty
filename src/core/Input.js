@@ -110,17 +110,19 @@ export class Input {
   }
 
   /**
-   * Take the mouse. Never fullscreen with it.
+   * Take the mouse, and — only if asked — fullscreen with it.
    *
-   * The game used to enter fullscreen alongside the lock, because fullscreen is
-   * the only state in which the Keyboard Lock API will hand over Ctrl+W. That
-   * trade is not worth it: Chromium confines the OS cursor with a clip
-   * rectangle while the pointer is locked, and in fullscreen that rectangle is
-   * the whole screen — so when it goes stale on a scaled display the cursor is
-   * pinned into a quarter of the desktop rather than a quarter of a window,
-   * and the player cannot reach anything. Ctrl+W is covered by the
-   * `beforeunload` confirm during a live match instead, and F11 is still the
-   * player's own to press. Nothing here asks for fullscreen any more.
+   * Fullscreen is the one thing that lets the Keyboard Lock API hand over
+   * Ctrl+W, Ctrl+T and Ctrl+N. Nothing else can: those keydowns are consumed
+   * by the browser and never reach the document, so `preventDefault` has
+   * nothing to cancel and a page cannot refuse them.
+   *
+   * This was removed once, on the theory that fullscreen plus pointer lock was
+   * what stranded the OS cursor clip. That turned out to be wrong — the trap
+   * was the headless test suite taking pointer lock and clipping the cursor to
+   * its own viewport — so the trade is back on the table, and it is the
+   * player's to make: `captureShortcuts` is off by default and turning it on
+   * says "I want Ctrl to be mine, and I accept fullscreen for it".
    */
   async requestLock() {
     if (this.locked) return;
@@ -136,6 +138,15 @@ export class Input {
     // was reported and what made it so hard to place. The harness injects
     // input straight into this class and has never needed the lock.
     if (navigator.webdriver) return;
+
+    // Fullscreen first: Keyboard Lock is only honoured while it is held, and
+    // the lock has to be in place before the first Ctrl+W, not after it.
+    if (Settings.data.captureShortcuts === true && !document.fullscreenElement) {
+      try {
+        await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+        this._enteredFullscreen = true;
+      } catch { /* denied or unsupported — the beforeunload confirm still nets it */ }
+    }
     // Raw mouse input (unadjustedMovement) bypasses pointer acceleration, but
     // on Windows it also takes a different cursor-confinement path — the one
     // implicated when the visible cursor stays pinned to a corner of the
@@ -220,13 +231,24 @@ export class Input {
   }
 
   /**
-   * A page cannot cancel Ctrl+W or Ctrl+T with preventDefault. The Keyboard
-   * Lock API can, but only in fullscreen, so this is a bonus on top of the
-   * blanket preventDefault rather than a replacement for it.
+   * Take the keys the browser would otherwise eat — and only those.
+   *
+   * A page cannot cancel Ctrl+W with `preventDefault`; the keydown never
+   * arrives. The Keyboard Lock API is the only thing that can, and only while
+   * fullscreen is held. Locking a key routes it to the page with any modifier,
+   * so locking `KeyW` is what makes Ctrl+W ours.
+   *
+   * Deliberately not a blanket `lock()`. Locking everything also takes Escape,
+   * and then leaving fullscreen needs a long press that nobody discovers under
+   * fire — the player must always have an obvious way out, so Escape, F5, F11
+   * and F12 stay the browser's. These are the letters that pair with Ctrl into
+   * something destructive *and* sit under a hand on WASD.
    */
   _lockKeyboard() {
     if (!document.fullscreenElement || !navigator.keyboard?.lock) return;
-    navigator.keyboard.lock().catch(() => { /* not permitted; preventDefault still applies */ });
+    navigator.keyboard
+      .lock(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyT', 'KeyN', 'KeyP'])
+      .catch(() => { /* not permitted; the beforeunload confirm still nets it */ });
     this._keyboardLocked = true;
   }
 

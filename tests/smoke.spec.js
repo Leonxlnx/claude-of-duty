@@ -145,16 +145,26 @@ test.describe('match lifecycle', () => {
   test('no default keybind collides with a browser shortcut', async ({ page }) => {
     await boot(page);
 
-    const binds = await page.evaluate(() => window.__settings.data.keybinds);
+    const state = await page.evaluate(() => ({
+      binds: window.__settings.data.keybinds,
+      capture: window.__settings.data.captureShortcuts
+    }));
+    // Capture is off by default, so nothing may sit under a modifier the
+    // browser will eat before the game sees it.
+    expect(state.capture).not.toBe(true);
     const reserved = ['ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight', 'AltLeft', 'AltRight'];
-    for (const [action, code] of Object.entries(binds)) {
+    for (const [action, code] of Object.entries(state.binds)) {
       expect(reserved, `${action} is bound to a browser-reserved modifier`).not.toContain(code);
     }
 
     // And a profile saved with the old bind is repaired on load rather than
     // spread back over the defaults.
     const migrated = await page.evaluate(() => {
-      const key = Object.keys(localStorage).find((k) => k.startsWith('dust-corridor.settings'));
+      // The literal key: nothing is written until a setting changes, so
+      // searching localStorage finds nothing on a fresh profile and the write
+      // lands under "undefined" — which makes the assertion below pass
+      // whatever the migration does.
+      const key = 'dust-corridor.settings.v3';
       const stored = JSON.parse(localStorage.getItem(key) || '{}');
       stored.keybinds = { ...(stored.keybinds || {}), crouch: 'ControlLeft' };
       localStorage.setItem(key, JSON.stringify(stored));
@@ -162,6 +172,24 @@ test.describe('match lifecycle', () => {
       return window.__settings.data.keybinds.crouch;
     });
     expect(migrated, 'a stored Ctrl crouch survived a reload').not.toBe('ControlLeft');
+
+    // But with shortcut capture on, Ctrl is the game's — the migration must
+    // leave the player's deliberate choice alone rather than undoing it on
+    // every load.
+    const kept = await page.evaluate(() => {
+      // The literal key: nothing is written until a setting changes, so
+      // searching localStorage finds nothing on a fresh profile and the write
+      // lands under "undefined" — which makes the assertion below pass
+      // whatever the migration does.
+      const key = 'dust-corridor.settings.v3';
+      const stored = JSON.parse(localStorage.getItem(key) || '{}');
+      stored.captureShortcuts = true;
+      stored.keybinds = { ...(stored.keybinds || {}), crouch: 'ControlLeft' };
+      localStorage.setItem(key, JSON.stringify(stored));
+      window.__settings.load();
+      return window.__settings.data.keybinds.crouch;
+    });
+    expect(kept, 'capture was on and the Ctrl bind was stripped anyway').toBe('ControlLeft');
   });
 
   /**

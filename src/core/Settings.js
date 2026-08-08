@@ -45,6 +45,12 @@ const DEFAULTS = {
   difficulty: 'regular',
   // dawn | morning | day | sunset | night — see TIME_OF_DAY in render/Sky.js
   timeOfDay: 'day',
+  // Hold the browser's own shortcuts (Ctrl+W, Ctrl+T, Ctrl+N...) so they reach
+  // the game instead of the browser. Requires fullscreen — the Keyboard Lock
+  // API is only honoured there, and it is the only mechanism that can do this
+  // at all. Off by default because it takes the window over; on is the right
+  // answer for anyone who wants crouch on Ctrl.
+  captureShortcuts: false,
   // Raw (unadjusted) mouse input. Skips OS pointer acceleration, but its
   // Windows path is implicated in the stuck cursor clip on scaled displays.
   rawInput: false,
@@ -105,6 +111,10 @@ class SettingsStore {
    * the rebinding UI is enough there.
    */
   _retireControlBinds() {
+    // With shortcut capture on, Ctrl is the game's and there is nothing to
+    // retire — stripping it here would silently undo the player's choice
+    // every time they loaded the page.
+    if (this.data.captureShortcuts === true) return;
     const CTRL = new Set(['ControlLeft', 'ControlRight']);
     const SAFE = { crouch: 'KeyC', forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', sprint: 'ShiftLeft' };
     let changed = false;

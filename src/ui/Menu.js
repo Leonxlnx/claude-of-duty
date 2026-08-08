@@ -142,10 +142,11 @@ export class Menu {
     // one, Ctrl+D bookmarks — and none of those keydowns ever reach the page,
     // so no amount of preventDefault stops them. The player can still choose
     // it; they just get told what it costs.
-    if (el && (code === 'ControlLeft' || code === 'ControlRight')) {
+    const ctrl = code === 'ControlLeft' || code === 'ControlRight';
+    if (el && ctrl && Settings.data.captureShortcuts !== true) {
       el.classList.add('bind-risky');
       el.title = 'The browser keeps Ctrl shortcuts. Held with W this closes the tab, '
-        + 'and a page cannot prevent it.';
+        + 'and a page cannot prevent it. Turn on "Hold browser shortcuts" to take them.';
     } else if (el) {
       el.classList.remove('bind-risky');
       el.title = '';
@@ -202,6 +203,12 @@ export class Menu {
       this._slider('ADS multiplier', 0.2, 1.4, 0.02, Settings.data.adsMultiplier,
         (v) => this._set('adsMultiplier', v), (v) => v.toFixed(2)),
       this._toggle('Invert vertical', Settings.data.invertY, (v) => this._set('invertY', v)),
+      this._toggle('Hold browser shortcuts', Settings.data.captureShortcuts === true,
+        (v) => this._setCaptureShortcuts(v),
+        'Goes fullscreen on deploy so the game can keep Ctrl+W, Ctrl+T and '
+        + 'Ctrl+N instead of the browser. This is the only way to bind crouch '
+        + 'to Ctrl safely — turning it on offers to do that for you. Escape '
+        + 'and F11 always stay yours.'),
       this._toggle('Raw mouse input', Settings.data.rawInput === true,
         (v) => this._set('rawInput', v),
         'Skips pointer acceleration for aiming. Leave off if the cursor ever '
@@ -282,6 +289,22 @@ export class Menu {
     Settings.set('overrides', { ...Settings.data.overrides, [key]: value });
     this.onSettingChanged?.('quality', value);
     this.audio?.playUI('click');
+  }
+
+  /**
+   * Turning shortcut capture on is what makes Ctrl safe to bind, so offer the
+   * bind with it rather than making the player find the connection. Turning it
+   * off has to take the bind back, or crouch-walking closes the tab again the
+   * moment the protection is gone.
+   */
+  _setCaptureShortcuts(on) {
+    this._set('captureShortcuts', on);
+    const crouch = Settings.data.keybinds.crouch;
+    if (on && crouch === 'KeyC') {
+      this._applyBind('crouch', 'ControlLeft');
+    } else if (!on && (crouch === 'ControlLeft' || crouch === 'ControlRight')) {
+      this._applyBind('crouch', 'KeyC');
+    }
   }
 
   _group(title, rows) {
