@@ -107,10 +107,14 @@ test.describe('match lifecycle', () => {
     await settle(page, 1200);
     expect((await snapshot(page)).state).toBe('playing');
 
-    // Headless Chromium grants the lock for real, so this is the actual
-    // transition a player gets from Escape rather than a synthesised event.
-    expect(await page.evaluate(() => window.__game.input.locked)).toBe(true);
-    await page.evaluate(() => document.exitPointerLock());
+    // The game refuses pointer lock under automation on purpose — headless
+    // Chromium still applies the OS cursor clip, which pens the developer's
+    // real desktop cursor into the viewport rectangle. So the held lock is
+    // staged, and then the browser's own event is dispatched: what is under
+    // test is that Input hears it and Game acts on it, which is the wiring
+    // that was broken.
+    await page.evaluate(() => { window.__game.input.locked = true; });
+    await page.evaluate(() => document.dispatchEvent(new Event('pointerlockchange')));
     await settle(page, 600);
     expect((await snapshot(page)).state).toBe('paused');
     await expect(page.locator('#menu')).toBeVisible();

@@ -124,6 +124,18 @@ export class Input {
    */
   async requestLock() {
     if (this.locked) return;
+    // Automation never needs the real mouse, and taking it has a cost that
+    // lands on somebody else entirely.
+    //
+    // A headless Chromium still applies the OS cursor clip when a page takes
+    // pointer lock, and it clips to its own viewport at the screen origin. So
+    // every `?auto=1` boot of the test suite or a screenshot tool penned the
+    // *developer's* real desktop cursor into a 1280x720 box in the top-left
+    // corner of the screen, for as long as the run lasted. That is the cursor
+    // trap, in full: not something a player ever hit, which is exactly what
+    // was reported and what made it so hard to place. The harness injects
+    // input straight into this class and has never needed the lock.
+    if (navigator.webdriver) return;
     // Raw mouse input (unadjustedMovement) bypasses pointer acceleration, but
     // on Windows it also takes a different cursor-confinement path — the one
     // implicated when the visible cursor stays pinned to a corner of the
