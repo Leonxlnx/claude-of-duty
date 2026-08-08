@@ -94,9 +94,37 @@ keyboard lock. Guarded by the smoke test "losing pointer lock pauses, and a
 click does not take the mouse back", which exits a real lock — verified to fail
 against the old property name.
 
-The player must hard-refresh (Ctrl+Shift+R) to pick this up. If a trapped OS
-cursor still survives *after* the match has paused itself, that is the
-Chromium-side clip and the three layers below are what address it.
+**Check the port before believing any bug report.** On 2026-08-08 the user was
+still hitting the trap after all of this shipped, because **port 5173 was
+serving a different project entirely** ("Codex Logo Animation") — this game's
+dev server was not running, so the tab they were playing had been loaded from a
+server that no longer existed and kept running its old bundle in memory
+forever. No fix could ever reach it. Verify with:
+
+```bash
+curl -s http://localhost:5173/ | head -5
+```
+
+Known-good URLs, both verified to carry the fixes: `http://localhost:4319/`
+(preview, serves `dist/` — rebuild with `npm run build`) and
+`http://localhost:5174/` (dev server, started with
+`npm run dev -- --port 5174 --strictPort false` because 5173 was taken). The
+start screen now prints a build stamp and the mouse settings in the footer, so
+which build is on screen is readable rather than guessed.
+
+If a trapped OS cursor still survives *after* the match has paused itself and
+the build stamp is current, that is the Chromium-side clip and the layers below
+are what address it.
+
+### Layer 5 — no fullscreen, and a keyboard way out
+
+The game never calls `requestFullscreen` any more and `fullscreenOnPlay` is
+gone from settings. In fullscreen Chromium's cursor clip is the whole screen,
+so a stale one pins the cursor into a quarter of the *desktop*; windowed, the
+worst case is a quarter of a window. Keyboard Lock was the only reason for it
+and `beforeunload` replaced that. The pause menu is also keyboard-operable now
+(Enter resumes, Q abandons) so a confined cursor can never lock a player into a
+match they cannot leave.
 
 ### The three earlier layers (all still in place)
 
