@@ -183,45 +183,43 @@ test.describe('slide', () => {
 
       // A slide needs a run-up, and where the player happens to spawn may not
       // have one — a run that ends against a market stall never gets near
-      // sliding pace, and the test then reports a broken slide. Face down the
-      // longest clear line from here and, if the run still bogs down, try the
-      // next best one.
-      const Vec = p.eye.constructor;
-      const from = new Vec();
-      const clearAhead = (angle) => {
-        const dir = new Vec(-Math.sin(angle), 0, -Math.cos(angle));
-        from.copy(p.controller.position);
-        let d = 40;
-        for (const hy of [0.4, 1.1, 1.7]) {
-          const hit = g.world.bvh.raycast(new Vec(from.x, from.y + hy, from.z), dir, 40);
-          if (hit.hit) d = Math.min(d, hit.t);
-        }
-        return d;
-      };
-      const headings = [];
-      for (let a = 0; a < 24; a++) {
-        const ang = (a / 24) * Math.PI * 2;
-        headings.push({ ang, d: clearAhead(ang) });
-      }
-      headings.sort((x, y) => y.d - x.d);
+      // sliding pace, and the test then reports a broken slide when the fault
+      // is the spawn draw. The map is generated from a fixed seed, so start
+      // from a fixed spot instead: the north end of the market lane, facing
+      // south down the middle of the street. `clear` is asserted below so this
+      // fails as "the lane is no longer clear" rather than "the slide broke"
+      // if the generator ever puts something in the way.
+      const START = { x: -0.5, z: 14 };
+      const HEADING = 0;   // yaw 0 => forward is -Z, straight down the lane
 
+      const Vec = p.eye.constructor;
+      const dir = new Vec(-Math.sin(HEADING), 0, -Math.cos(HEADING));
       h.releaseAll();
+      h.teleport(START.x, g.nav.heightAt(START.x, START.z) + 0.1, START.z);
+      p.yaw = HEADING;
+      p.pitch = 0;
       await wait(0.4);
+
+      // Clearance down the run line, at ankle, waist and head height, offset
+      // to both shoulders — the body is a capsule, not a ray.
+      let clear = 60;
+      for (const side of [-0.34, 0, 0.34]) {
+        for (const hy of [0.35, 1.1, 1.7]) {
+          const from = p.controller.position.clone();
+          from.x += side * Math.cos(HEADING);
+          from.z += -side * Math.sin(HEADING);
+          from.y += hy;
+          const hit = g.world.bvh.raycast(from, dir, 60);
+          if (hit.hit) clear = Math.min(clear, hit.t);
+        }
+      }
+
       const standingEye = p.eye.y - p.controller.position.y;
 
-      let sprintSpeed = 0, clear = 0;
-      for (const { ang, d } of headings.slice(0, 4)) {
-        p.yaw = ang;
-        p.pitch = 0;
-        h.key('KeyW', true);
-        h.key('ShiftLeft', true);
-        await wait(1.2);
-        sprintSpeed = p.speed2D;
-        clear = d;
-        if (sprintSpeed > 7) break;
-        h.releaseAll();
-        await wait(0.5);
-      }
+      h.key('KeyW', true);
+      h.key('ShiftLeft', true);
+      await wait(1.2);
+      const sprintSpeed = p.speed2D;
 
       // Read the boost where it is applied rather than by polling afterwards.
       // A slide bleeds off from the moment it starts and the run may already be
@@ -250,6 +248,10 @@ test.describe('slide', () => {
         settledSpeed: p.speed2D
       };
     });
+
+    // First: the run-up is what the test thinks it is. Everything below reads
+    // as a broken slide when it is really a blocked lane, so say so here.
+    expect(run.clear, 'market lane run-up is obstructed').toBeGreaterThan(25);
 
     // A slide is only worth the key if it buys pace over the sprint it costs.
     expect(run.sliding).toBe(true);

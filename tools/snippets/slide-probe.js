@@ -1,57 +1,55 @@
+// Slide out of a sprint from a fixed start: the north end of the market lane,
+// running south down the middle of the street. The old version of this probe
+// sprinted from wherever the player happened to spawn, which is why it could
+// report a broken slide on a build where the slide worked fine.
 const p = g.player;
+const h2 = h;
 p.spawnProtect = 1e9;
-const wait = (s) => h.wait(s);
-const Vec = p.eye.constructor;
-const from = new Vec();
+const wait = (s) => h2.wait(s);
 
-const clearAhead = (angle) => {
-  const dir = new Vec(-Math.sin(angle), 0, -Math.cos(angle));
-  from.copy(p.controller.position);
-  let d = 40;
-  for (const hy of [0.4, 1.1, 1.7]) {
-    const hit = g.world.bvh.raycast(new Vec(from.x, from.y + hy, from.z), dir, 40);
-    if (hit.hit) d = Math.min(d, hit.t);
-  }
-  return d;
-};
+const START = { x: -0.5, z: 14 };   // market lane, north end
+const HEADING = 0;                // yaw 0 => forward is -Z, down the lane
 
-const headings = [];
-for (let a = 0; a < 24; a++) {
-  const ang = (a / 24) * Math.PI * 2;
-  headings.push({ ang: +ang.toFixed(2), d: +clearAhead(ang).toFixed(1) });
-}
-headings.sort((x, y) => y.d - x.d);
-
-h.releaseAll();
+h2.releaseAll();
+h2.teleport(START.x, g.nav.heightAt(START.x, START.z) + 0.1, START.z);
+g.playerTarget?.sync?.();
+p.yaw = HEADING; p.pitch = 0;
 await wait(0.4);
 
-const runs = [];
-for (const { ang, d } of headings.slice(0, 4)) {
-  p.yaw = ang; p.pitch = 0;
-  h.key('KeyW', true);
-  h.key('ShiftLeft', true);
-  await wait(1.2);
-  runs.push({
-    ang, clear: d,
-    speed: +p.speed2D.toFixed(2),
-    sprinting: p.sprinting,
-    sprintKey: g.input.action('sprint'),
-    airborneFor: +p.airborneFor.toFixed(2),
-    crouched: p.crouched,
-    cooldown: +p.slideCooldown.toFixed(2)
-  });
-  if (p.speed2D > 7) break;
-  h.releaseAll();
-  await wait(0.5);
+const standingEye = p.eye.y - p.controller.position.y;
+
+h2.key('KeyW', true);
+h2.key('ShiftLeft', true);
+const trace = [];
+for (let i = 0; i < 8; i++) {
+  await wait(0.15);
+  trace.push(+p.speed2D.toFixed(2));
 }
 
-// try the slide from the last run
-h.key('KeyC', true);
-let slid = false;
+let entrySpeed = 0, priorSpeed = 0;
+p.onSlide = () => {
+  priorSpeed = p.speed2D;
+  entrySpeed = Math.hypot(p.controller.velocity.x, p.controller.velocity.z);
+};
+
+h2.key('KeyC', true);
+let slid = false, lowestEye = Infinity;
 for (let i = 0; i < 16; i++) {
   await wait(0.04);
   if (p.sliding) slid = true;
+  lowestEye = Math.min(lowestEye, p.eye.y - p.controller.position.y);
 }
-h.releaseAll();
+p.onSlide = null;
+h2.releaseAll();
+await wait(1.4);
 
-return { pos: [+p.controller.position.x.toFixed(1), +p.controller.position.z.toFixed(1)], runs, slid };
+return {
+  start: START,
+  sprintTrace: trace,
+  sprintSpeed: trace[trace.length - 1],
+  slid, entrySpeed: +entrySpeed.toFixed(2), priorSpeed: +priorSpeed.toFixed(2),
+  headDrop: +(standingEye - lowestEye).toFixed(2),
+  endedCleanly: !p.sliding,
+  settledSpeed: +p.speed2D.toFixed(2),
+  endPos: [+p.controller.position.x.toFixed(1), +p.controller.position.z.toFixed(1)]
+};
