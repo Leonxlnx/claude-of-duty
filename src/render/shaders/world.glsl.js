@@ -196,7 +196,18 @@ SurfaceOut shadeSurface(vec3 worldPos, vec3 N, vec3 V, vec3 albedo, float rough,
   }
 
   // --- sky / bounce ambient
+  //
+  // The sky probe is close to pure Rayleigh, and using it neat as the diffuse
+  // fill paints every shadow the colour of the zenith: an alley floor in shade
+  // came out teal, which is a thing no sunlit desert has ever done. Real
+  // skylight reaching a street has been through aerosol and several bounces
+  // off warm ground long before it lands, so it arrives far less saturated
+  // than the sky it came from. Pulling it toward its own luminance with a
+  // slight warm bias keeps the direction and the brightness of the fill and
+  // takes away only the cast.
   vec3 irr = shIrradiance(N);
+  float irrLum = dot(irr, vec3(0.2126, 0.7152, 0.0722));
+  irr = mix(irr, vec3(irrLum) * vec3(1.05, 1.0, 0.93), 0.40);
   vec3 ambient = diffuseAlbedo * irr * ao;
 
   // --- warm bounce off the ground
@@ -441,9 +452,16 @@ void main(){
   // Blown render: patches where the plaster has come off, exposing a coarser,
   // greyer substrate. Sparse on purpose — this is an accent, not a texture.
   // (Not named "patch": that is a reserved word in GLSL and compiles nowhere.)
-  float blown = smoothstep(0.74, 0.86, fbm(vWorldPos.xz * 0.32 + vWorldPos.y * 0.28 + 7.0, 3, 0.5));
+  //
+  // Thresholding one low-octave fbm gives evenly sized round blobs — the wall
+  // ends up with polka dots rather than damage. Warping the lookup with a
+  // second noise before thresholding tears the edges and varies the sizes,
+  // which is the difference between a stain and a broken surface.
+  vec2 blownUv = vWorldPos.xz * 0.32 + vWorldPos.y * 0.28 + 7.0;
+  blownUv += (fbm(blownUv * 2.7 + 19.0, 2, 0.5) - 0.5) * 1.6;
+  float blown = smoothstep(0.70, 0.88, fbm(blownUv, 4, 0.55));
   blown *= vertical * vWear;
-  albedo = mix(albedo, vec3(0.40, 0.385, 0.355), clamp(blown * 0.6, 0.0, 0.6));
+  albedo = mix(albedo, vec3(0.40, 0.385, 0.355), clamp(blown * 0.55, 0.0, 0.55));
 
   // Dirt and exposed substrate are rougher than the render they sit on.
   float rough = clamp(orm.g * (0.9 + wear * 0.25) + dustMask * 0.16

@@ -67,11 +67,18 @@ vec3 atmosphere(vec3 dir, vec3 sunDir){
     sumR += hr * att;
     sumM += hm * att;
   }
-  // Cheap multiple-scattering approximation: an isotropic-phase contribution
-  // proportional to the accumulated scattering. Without it a single-scattering
-  // sky reads far too dark and too saturated near the horizon. The Mie share is
-  // kept low or the long horizon paths turn the whole band milky yellow.
-  vec3 ms = (sumR * BETA_R * 0.8 + sumM * vec3(mieScale) * 0.22) * 0.5 * max(sunDir.y, 0.0);
+  // Cheap multiple-scattering approximation: a contribution proportional to
+  // the accumulated scattering. Without it a single-scattering sky reads far
+  // too dark and too saturated near the horizon.
+  //
+  // The Rayleigh share really is close to isotropic after a few bounces, but
+  // the Mie share is not, and it is the one carrying the warmth. Spreading it
+  // evenly put a salmon band right around the horizon — so a street facing
+  // ninety degrees away from a high midday sun ended in what looked like a
+  // sunset, and the whole frame read as late afternoon. Aiming it at the sun
+  // keeps the warm glow where the sun actually is.
+  float mieAim = 0.22 * mix(0.20, 1.0, smoothstep(-0.25, 0.85, mu));
+  vec3 ms = (sumR * BETA_R * 0.8 + sumM * vec3(mieScale) * mieAim) * 0.5 * max(sunDir.y, 0.0);
   return uSunIntensity * (sumR * BETA_R * pr + sumM * mieScale * pm + ms);
 }
 `;

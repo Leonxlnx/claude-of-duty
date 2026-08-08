@@ -561,9 +561,16 @@ void main(){
   float exposure = texture(uExposure, vec2(0.5)).r;
   if(uExposureOverride > 0.0) exposure = uExposureOverride;
 
-  // chromatic separation grows toward the frame edge only
+  // Chromatic separation grows toward the frame edge — and only there.
+  //
+  // The constant term meant every pixel got separation, including the middle
+  // of the frame, which is not something a lens does. On thin high-contrast
+  // geometry at the sample rate — window grilles, railings, awning posts — it
+  // pushed alternating bars to fully saturated red and blue, so a barred
+  // window read as candy stripes rather than as dark metal. Quadratic from
+  // zero at the centre, and weaker overall.
   vec3 hdr;
-  float ca = uChromatic * (0.0016 + r2 * 0.006);
+  float ca = uChromatic * r2 * r2 * 0.020;
   if(ca > 1e-5){
     hdr.r = texture(uColor, uv + centered * ca).r;
     hdr.g = texture(uColor, uv).g;
@@ -614,6 +621,20 @@ void main(){
     float n = hash12(gl_FragCoord.xy + fract(uTime)*311.7) - 0.5;
     col += n * uGrain * 0.035 * (1.0 - luma(col)*0.6);
   }
+
+  // Output dither, immediately before the 8-bit write.
+  //
+  // The sky is a slow gradient across nine hundred pixels, so quantising it to
+  // 8 bits laid down 40-60 pixel plateaus of a single value with 1-LSB steps
+  // between them: visible banding across the whole upper field. Grain hides it
+  // only when grain is on, and it is a setting. A triangular-PDF dither of one
+  // LSB is the standard fix — the difference of two uniform samples gives the
+  // triangular distribution, which decorrelates the error from the signal
+  // instead of just adding noise to it. Below perception on its own, and TAA
+  // averages what little is left.
+  float d1 = hash12(gl_FragCoord.xy + fract(uTime) * 173.3);
+  float d2 = hash12(gl_FragCoord.xy + 57.31 + fract(uTime) * 419.7);
+  col += (d1 - d2) / 255.0;
 
   outColor = vec4(max(col, vec3(0.0)), 1.0);
 }
