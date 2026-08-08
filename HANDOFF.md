@@ -158,29 +158,30 @@ Escape hatches for the player, in order of certainty:
 
 ## Open work, in priority order
 
-1. **Round-3 environment pass.** Remaining known flats: the blue-grey market
-   counter boxes in the lane, big uniform ground patches, rooftop clutter
-   density. Re-shoot and judge — much of what critics flagged was actually
-   the broken lighting. `tools/enemy-shots.mjs` shows the pattern to copy:
-   a fixed mark, framings measured from the sun, and settling on rendered
-   frames rather than on the wall clock.
+1. **Environment round 5.** Round 4 stocked the market, lifted the roof
+   clutter over the parapets and broke up the ground — see `WORKBENCH.md` for
+   what the critics found and which of it survived checking. Still open, in
+   the critics' order: the blue-grey barrier slabs have no material identity;
+   facades are large flat areas with no plaster patching or staining under
+   sills; every wall meets the ground on a razor-clean line with no dirt
+   fillet; awnings are rigid quads at a uniform height with no sag, sitting
+   high enough over the counters to read as a hollow void.
 2. **Enemy characters, round 2.** Round 1 landed (palette, team panel, visible
    carbine — see `shots/enemy/round3/`). Still weak: the plate carrier does not
    separate from the uniform on the sunlit side, the face is a dark void under
    the helmet, and the silhouette is still fairly slab-sided. Judge from
    `weapon` and `torso` framings; they are the ones that show it.
-3. **"Shooting into buildings more realistic"** (user ask, untouched):
-   interior darkness response, dust/debris when rounds enter rooms,
-   penetration through shutters/wood already exists in Combat — check its
-   effects read well.
-4. **Suppression from near misses** — stress currently rises only on hits
-   and grenades; wire trace near-misses to `agent.stress` in Combat.
-5. **HUD round 2**: kill feed styling, hit-marker pop, compass polish. The
-   perf readout (top-left) leaks into screenshots; it is the `showFps`
-   debug overlay — consider hiding it in gauntlet shots.
-6. **Performance round 2** if the user still reports load: cloud pass is
+3. **HUD round 2**: kill feed styling, hit-marker pop, compass polish.
+4. **Performance round 2** if the user still reports load: cloud pass is
    half-res already; next lever is AO resolution and the prepass at
    dynamic scale.
+5. **Interior darkness response** — the dust and splinters when a round enters
+   a room are in (`Combat._exitSpall`), but how a dim interior reads from
+   outside when a round goes through has not been looked at.
+
+Done since the last handoff: the slide test, enemy presentation, near-miss
+suppression, penetration effects, environment round 4, the cursor trap, and
+both gunplay flakes. Suite is 42/42.
 
 ## Verification habits that caught real bugs here
 

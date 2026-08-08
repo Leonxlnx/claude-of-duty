@@ -92,8 +92,42 @@ separates from the armour, the helmet has a brim, the team colour carries.
 Still open — the carrier does not separate on the sunlit side, and the face is
 a dark void under the helmet.
 
-## Round 4 — candidates
+## Round 4 — environment, with two critics (done)
 
-- Market-lane counters and the flat blue-grey stall boxes.
-- Suppression wired to near misses, not only to hits.
-- Dust and splinters when rounds enter a room.
+Two independent critics with fresh context reviewed `shots/gauntlet/round3/`.
+They converged, and both put the same thing first: **the market counters are
+bare planks — nowhere in three shots is anything for sale.** That matched the
+standing list, so it was built.
+
+Verifying their findings against the pixels first was what kept two of them
+from becoming wasted work:
+
+- "no parapets, no roof furniture" — **wrong about the cause.** Both already
+  existed. The fault was that almost none of the clutter cleared the 0.55–1.1 m
+  parapet from street level, so the roofline still cut the sky flat. The fix
+  was height, not new geometry.
+- "the ground is one flat colour with a blur mask" — **right.** One
+  low-frequency noise over the whole district reads as a cloud layer.
+
+Shipped: goods scaled to counter length and placed in slots so they cannot
+clump at one end, plus bundles and pots hung from the top rail to fill the void
+between counter and awning; roof tanks on legs, taller stair boxes, dishes and
+3.2–5.6 m masts; ground tint at three scales with two packed wheel ruts either
+side of the road crown. Compare `round3/street.png` with `round4/street.png`.
+
+Two capture-rig faults fixed in the same pass, both of which had been
+corrupting the loop itself: `h.teleport` now brings the eye with it (`eye` is a
+render-time interpolation, so every pose was aimed from where the camera used
+to be, and the framing depended on the previous shot — rounds were not
+comparable), and the HUD is hidden for captures.
+
+## Round 5 — candidates
+
+- The flat blue-grey barrier slabs in the street still have no material
+  identity — they could be plastic, metal or stone.
+- Facades are large areas of flat colour: no plaster patching, no water
+  staining under sills and balcony drains, no exposed block.
+- Nothing meets the ground: every wall/floor seam is a razor-clean line with
+  no splash zone, dirt fillet or chipped kerb.
+- Awnings are rigid flat quads at a uniform height — no sag, no fray, and the
+  canopy sits high enough above the counters to read as a hollow void.
