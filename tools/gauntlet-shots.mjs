@@ -26,6 +26,17 @@ page.on('pageerror', (e) => console.log(`[pageerror] ${e.message}`));
 
 // `nomb` because every pose teleports, and one frame of enormous camera
 // velocity smears the whole shot; motion blur has nothing to say about a still.
+// Quality has to be stored *before* the page boots. The material arrays are
+// baked once during boot from the stored level, so setting quality afterwards
+// moves the render scale and the shadows but leaves the textures at the low
+// resolution — captures at level 8 were being judged for sharpness while
+// carrying 512px materials and 8x anisotropy.
+await page.addInitScript(() => {
+  const key = 'dust-corridor.settings.v3';
+  const stored = JSON.parse(localStorage.getItem(key) || '{}');
+  stored.quality = 8;
+  localStorage.setItem(key, JSON.stringify(stored));
+});
 await page.goto(`http://localhost:${port}/?auto=1&dynres=0&nomb`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__ready === true, { timeout: 180000 });
 

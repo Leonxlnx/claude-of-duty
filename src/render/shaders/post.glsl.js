@@ -587,8 +587,13 @@ void main(){
   // pushed alternating bars to fully saturated red and blue, so a barred
   // window read as candy stripes rather than as dark metal. Quadratic from
   // zero at the centre, and weaker overall.
+  // Halved again, and the offset is capped: at 0.020 the extreme corner still
+  // separated the channels by over two pixels, which on one-pixel geometry —
+  // window grilles, power lines, antennas — resolves as fully saturated orange
+  // and cyan pixels rather than as a fringe on dark metal. A lens fringe you
+  // can name the colour of is too strong.
   vec3 hdr;
-  float ca = uChromatic * r2 * r2 * 0.020;
+  float ca = min(uChromatic * r2 * r2 * 0.010, 0.00035);
   if(ca > 1e-5){
     hdr.r = texture(uColor, uv + centered * ca).r;
     hdr.g = texture(uColor, uv).g;

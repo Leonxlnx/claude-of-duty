@@ -183,7 +183,57 @@ Still open on the weapon: a pale cylinder remains at the stock end (visible
 bottom-right in `shots/gun/round2.png`) and the hands have no AO where they
 meet the grip. The critics' full weapon note is in round 5-7 above.
 
-## Round 10 — candidates, in the critics' order
+## Round 10 — critics at quality 8 (partly done)
+
+First captures taken at a supersampled level — and the capture rig was lying
+until this round: it called `setRenderScale(1)` after picking the quality
+level, which threw the supersampling away, so every previous judgement about
+sharpness was made against a level-4 image.
+
+**The headline finding was wrong, for the third round running.** A critic
+measured two sand pixels and concluded sun-to-shade contrast was 1.47:1 with no
+colour separation — "the single change with the most impact" — and prescribed
+cutting ambient by about a third. Measured properly across the whole ground
+band (`tools/snippets/shade-ratio.js`): **2.84:1 in sRGB, 9.9:1 in linear**,
+which is at or above the physically correct 5-8:1. Their two samples were an
+unlucky pair. Following the advice would have crushed the shadows again and
+undone the fix the *previous* critic correctly demanded. Check before building.
+
+Acted on: chromatic aberration halved again and the offset hard-capped, because
+at the old strength the extreme corner separated channels by over two pixels
+and one-pixel geometry resolved as saturated orange and cyan rather than as a
+fringe.
+
+A second critic measured properly — Laplacian RMS, autocorrelation, per-channel
+centroid separation — and was far more useful. Verified from its findings:
+
+- **"SSAO contributes nothing, this is a binding failure."** Half right, and the
+  half it got wrong matters. `tools/snippets/ao-check.js`: the AO buffer is
+  bound and does vary (min 100), but its **mean is 251/255** — 98% unoccluded —
+  and toggling `uAOStrength` moves the frame mean by **0.19 of 130**. So it is
+  not a binding bug; AO only multiplies the ambient term, and in direct sun
+  ambient is a small share of the pixel, so contact darkening cannot show. The
+  fix is a contact term that also touches direct light, not a rewire.
+- **"Textures carry no energy between 1 and 8 pixels."** Correct, and it agrees
+  with the material-resolution work — but those captures were taken at 512px
+  materials and 8x anisotropy *despite* being set to quality 8, because the
+  arrays bake at boot from the stored level and the tool set quality after
+  boot. Fixed: the capture now stores the level in an init script. **The round 9
+  images are not a fair test of the crispness work.**
+- **Chromatic aberration.** Measured 1.2-1.5px corner separation against a
+  target of ≤0.4px. Halved and hard-capped.
+
+Still open from this round, unverified — check each against the pixels first:
+- Props with no cast or contact shadow (sandbag stacks, barrels) while stall
+  posts in the same frame cast correctly. Suggests a caster-set exclusion.
+- Bloom around the sun clipping the red channel into a flat plateau with a hard
+  rim; likely the same root as the earlier "sun disc is 8x too large".
+- The viewmodel is lit by a constant rig, not the scene — an 11% brightness
+  swing across three radically different lighting contexts.
+- Hard-edged rectangles of light inside shadow in `alley.png`. May well be
+  legitimate gaps between awning quads; the critic could not see above frame.
+
+## Round 11 — candidates, in the critics' order
 - Walls have no relief — no normal map at mid scale, so a raking sun produces
   nothing. Same blob frequency at 2 m and at 40 m.
 - The viewmodel is an untextured blockout in the strongest read position of
