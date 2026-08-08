@@ -97,7 +97,11 @@ const float CLOUD_TOP = 3200.0;
 float cloudShape(vec3 p){
   vec3 q = p * 0.00042;
   q.xz += uWind * uTime * 0.0016;
-  float base = fbm3(q, 4, 0.55);
+  // Cumulus gathers into distinct heaps with open blue between them. Without
+  // the cluster mask the fbm covers the deck evenly and the sky reads as one
+  // continuous overcast haze no matter where the density threshold sits.
+  float mass = fbm3(q * 0.30 + 7.3, 2, 0.6);
+  float base = fbm3(q, 4, 0.55) * smoothstep(0.40, 0.68, mass);
   float detail = fbm3(q * 4.2 + 13.7, 3, 0.5);
   float heightFrac = clamp((p.y - CLOUD_BOTTOM) / (CLOUD_TOP - CLOUD_BOTTOM), 0.0, 1.0);
   // cumulus profile: rounded bottom, billowing top, hard-ish anvil cutoff
@@ -105,7 +109,7 @@ float cloudShape(vec3 p){
   float d = base * profile;
   // A tighter band gives cumulus a defined edge instead of a haze gradient.
   d = smoothstep(uCoverage, uCoverage + 0.20, d);
-  d -= detail * 0.20 * (1.0 - heightFrac * 0.6);
+  d -= detail * 0.26 * (1.0 - heightFrac * 0.6);
   return clamp(d, 0.0, 1.0);
 }
 
@@ -151,9 +155,16 @@ void main(){
       // Cloud radiance has to be built from the same scale as the sun that lights
       // the ground, otherwise the deck renders darker than the sky behind it.
       // The constant floor stands in for multiple scattering inside the cloud.
-      float lit = sunTrans * (phase * 4.0 + 0.34) * 0.55 + 0.052;
-      vec3 lightCol = uSunColor * uSunIntensity * lit * mix(0.62, 1.0, powder);
-      lightCol += vec3(0.40, 0.50, 0.72) * 1.15;   // sky bounce into the cloud
+      //
+      // Water droplets scatter without a preference for wavelength, so the
+      // cloud is lit with the sun's colour pulled most of the way to white —
+      // feeding it the warm ground-light tint, with a heavy forward-phase
+      // gain on top, sent every bright top through the tonemapper into
+      // salmon and stained the entire deck with it.
+      float lit = sunTrans * (phase * 1.6 + 0.42) * 0.62 + 0.075;
+      vec3 cloudSun = mix(vec3(1.0), uSunColor, 0.3);
+      vec3 lightCol = cloudSun * uSunIntensity * lit * mix(0.62, 1.0, powder);
+      lightCol += vec3(0.42, 0.52, 0.74) * 1.05;   // sky bounce into the cloud
       float extinct = exp(-density * dt * 0.0052);
       scattered += transmittance * (1.0 - extinct) * lightCol;
       transmittance *= extinct;

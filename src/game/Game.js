@@ -202,7 +202,11 @@ export class Game {
     this.graph.debugView = parseInt(qp.get('debug') ?? '0', 10) || 0;
 
     await loading.step(0.22, 'Baking sky and irradiance');
-    this.graph.sky.setSun(112, 41);
+    // High sun, late morning. At 41 degrees the sun colour curve tinted every
+    // white surface — and through the irradiance bake, the whole district —
+    // visibly warm, and bright clouds rolled through the tonemapper into
+    // salmon. Midday light is nearly white and the map reads sunlit again.
+    this.graph.sky.setSun(116, 57);
     this.graph.sky.bake();
     this.graph.updateSkyUniforms();
 

@@ -31,11 +31,14 @@ export function createGradingLUT() {
         cg = contrastCurve(cg, pivot, contrast);
         cb = contrastCurve(cb, pivot, contrast);
 
-        // luminance-dependent temperature: warm highs, cool shadows
+        // Luminance-dependent temperature: warm highs, cool shadows. Kept
+        // gentle — the sun already carries the warmth, and a grade shoving
+        // more red into everything bright is how white plaster and cloud
+        // tops end up rose-tinted across the whole frame.
         const l = 0.2126 * cr + 0.7152 * cg + 0.0722 * cb;
         const warm = smoothstep(0.35, 0.95, l);
-        cr += warm * 0.022;
-        cb -= warm * 0.026;
+        cr += warm * 0.012;
+        cb -= warm * 0.014;
         const cool = 1 - smoothstep(0.0, 0.35, l);
         cb += cool * 0.018;
         cr -= cool * 0.006;

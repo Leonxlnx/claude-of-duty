@@ -18,7 +18,9 @@ export class Sky {
     this.sunColor = new THREE.Color(1.0, 0.955, 0.88);
     this.sunIntensity = 21.0;
     this.turbidity = 2.6;
-    this.cloudCoverage = 0.40;
+    // Post cluster-mask this reads lower than the number suggests: heaps of
+    // cumulus with real blue between them, not four-tenths of the sky filled.
+    this.cloudCoverage = 0.52;
     this.wind = new THREE.Vector2(1.0, 0.35);
     this.cloudShadowOffset = new THREE.Vector2();
 
