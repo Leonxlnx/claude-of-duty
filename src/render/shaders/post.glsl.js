@@ -485,8 +485,15 @@ void main(){
   float logL = texture(uLuminance, vec2(0.5)).r;
   float avgL = exp2(logL);
   // Scene radiance is normalised so a fully sunlit white surface sits near 1.0.
-  // EV is expressed relative to an 18% middle-grey key.
-  float ev = log2(max(avgL, 1e-5) / 0.18);
+  //
+  // The key is what the average of the frame is mapped to. 18% is the textbook
+  // answer and it is the wrong one here: this scene is a sunlit desert street,
+  // so the average IS the sunlit ground, and keying it to middle grey made
+  // sunlit sand render at middle grey. Measured, it landed around 118 sRGB
+  // with nothing in the whole frame above 196 — no highlight anywhere, and a
+  // midday street that photographed like an overcast afternoon. A bright scene
+  // should key bright; AgX has the shoulder to take it.
+  float ev = log2(max(avgL, 1e-5) / 0.38);
   ev = clamp(ev - uCompensation, uMinEV, uMaxEV);
   float targetExposure = exp2(-ev);
 
