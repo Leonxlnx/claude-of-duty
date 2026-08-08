@@ -13,16 +13,12 @@ verified chunk — the user wants frequent pushes).
 - `npm run build` — build to `dist/` (~2s)
 - `npm run preview` — serves `dist/` on 4319 (**tests and tools expect this
   to be running**; check before debugging "connection refused")
-- `npx playwright test --reporter=list` — full suite, ~6–10 min, 40 tests.
-  Last run: 38 passed, 2 failed. "a traced shot damages the thing it is
-  pointed at" is a flake (passes on re-run; the aimed-at enemy moves).
-  **"crouching out of a sprint carries speed and drops the head" fails
-  repeatably since the spawnable-mask change** — the random spawn now lands
-  somewhere the test's four-heading run-up cannot reach sliding pace
-  (gate: sprint key held + speed > walk×0.9). The slide mechanic itself was
-  verified working today; fix the TEST (teleport to a long clear stretch,
-  e.g. the market lane, before the run-up — `tools/snippets/slide-probe.js`
-  is a ready-made probe for exactly this). First task for whoever picks up.
+- `npx playwright test --reporter=list` — full suite, ~6 min, **41 tests, all
+  green** as of 2026-08-08. The two long-standing gunplay flakes are fixed
+  rather than tolerated: they aimed at a live agent and paced their bursts on
+  the wall clock, so they raced the AI's footwork and fired a different number
+  of rounds on every machine. `h.freezeAI()` holds the opposition still while
+  still posing it, and the bursts wait on simulated seconds.
 - `node tools/eval.mjs <snippet.js>` — evaluate a JS snippet against the
   running game (`g` = game, `h` = harness) and print the JSON result. Use
   this for any question about state. Snippets live in `tools/snippets/`.
@@ -153,29 +149,26 @@ match they cannot leave.
 
 1. Symmetric unwind — keyboard lock + fullscreen released whenever pointer
    lock ends, and on `visibilitychange`/`blur` (`src/core/Input.js`).
-2. `fullscreenOnPlay` now **defaults off** (settings storage bumped to v3 so
-   the old stored `true` cannot survive). Ctrl+W is covered by a
-   `beforeunload` confirm during a live match instead of Keyboard Lock.
-3. `unadjustedMovement` (raw input) now **defaults off** — its Windows path
+2. `fullscreenOnPlay` defaulted off, then was **removed entirely** by layer 5.
+3. `unadjustedMovement` (raw input) **defaults off** — its Windows path
    is implicated in exactly this stale-clip bug on scaled displays.
 
-If it recurs with layer 4 in place *and* the match does pause itself, confirm
-`localStorage['dust-corridor.settings.v3']` has `fullscreenOnPlay:false,
-rawInput:false`, then suspect DevTools-docked geometry during dev. Unstick
-escape hatch for the user: Alt+Tab or F11 ×2.
+Escape hatches for the player, in order of certainty:
+`tools/unstick-cursor.cmd` → Ctrl+Alt+Del then Escape → Alt+Tab.
 
 ## Open work, in priority order
 
-1. **Enemy character presentation.** The round-1 critic called the enemy a
-   featureless dark mannequin, but the shot framed no enemy — first build a
-   reliable close-up pose (freeze an agent, teleport in front, then shoot),
-   judge, then improve silhouette/gear/colour separation in
-   `src/game/CharacterRig|Character.js` if confirmed. Enemies may genuinely
-   need: clearer vest/helmet silhouette, 3–4 material colours, visible rifle.
-2. **Round-3 environment pass.** Remaining known flats: the blue-grey market
+1. **Round-3 environment pass.** Remaining known flats: the blue-grey market
    counter boxes in the lane, big uniform ground patches, rooftop clutter
    density. Re-shoot and judge — much of what critics flagged was actually
-   the broken lighting.
+   the broken lighting. `tools/enemy-shots.mjs` shows the pattern to copy:
+   a fixed mark, framings measured from the sun, and settling on rendered
+   frames rather than on the wall clock.
+2. **Enemy characters, round 2.** Round 1 landed (palette, team panel, visible
+   carbine — see `shots/enemy/round3/`). Still weak: the plate carrier does not
+   separate from the uniform on the sunlit side, the face is a dark void under
+   the helmet, and the silhouette is still fairly slab-sided. Judge from
+   `weapon` and `torso` framings; they are the ones that show it.
 3. **"Shooting into buildings more realistic"** (user ask, untouched):
    interior darkness response, dust/debris when rounds enter rooms,
    penetration through shutters/wood already exists in Combat — check its
