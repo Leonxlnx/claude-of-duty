@@ -1,7 +1,8 @@
-// Bumped when the default bindings change in a way that a stored set would
-// contradict: saved keys win over defaults on load, so leaving v1 in place
-// would keep B on the fire selector while the grenade also claimed it.
-const STORAGE_KEY = 'dust-corridor.settings.v2';
+// Bumped when a default changes in a way that a stored set would contradict:
+// saved values win over defaults on load. v2 -> v3 turns fullscreen-on-play
+// off for everyone, because the stored `true` from v2 would keep the cursor
+// trap alive on the machines that suffer from it.
+const STORAGE_KEY = 'dust-corridor.settings.v3';
 
 export const QUALITY_PRESETS = {
   low: {
@@ -42,9 +43,13 @@ const DEFAULTS = {
   cameraShake: 0.85,
   showFps: true,
   difficulty: 'regular',
-  // Crouch is Ctrl, and only a fullscreen tab can take Ctrl+W back off the
-  // browser. Turn this off and crouch-walking forward will close the tab.
-  fullscreenOnPlay: true,
+  // Off by default. Fullscreen is what lets the Keyboard Lock API take Ctrl+W
+  // off the browser — but the fullscreen + pointer-lock combination is also
+  // what leaves Chromium's cursor clip stale on some scaled displays, pinning
+  // the visible cursor into a quarter of the screen after every match. A
+  // confirmation on leaving the page covers accidental Ctrl+W instead; anyone
+  // who wants true fullscreen can turn it on in settings.
+  fullscreenOnPlay: false,
   keybinds: {
     fire: 'Mouse0', aim: 'Mouse2',
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',

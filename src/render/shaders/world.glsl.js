@@ -428,12 +428,22 @@ void main(){
   vec3 ambient = s.ambient;
 
   if(uViewmodelLight > 0.0){
+    // Wrapped key: the sun allowed partway round the form, added only where
+    // the real sun cannot reach. The faces the player actually looks at point
+    // at the camera, which is exactly where N.L gates the key light to zero —
+    // without this the whole weapon is lit by nothing but sky.
+    float ndlRaw = dot(N, uSunDirection);
+    float wrapKey = max((ndlRaw + 0.6) / 1.6, 0.0) - max(ndlRaw, 0.0);
+    direct += albedo * (1.0 - metal) / PI * uSunColor * wrapKey * 0.85;
+
+    // Neutral fill from over the shoulder. Scaled by the sky's luminance so
+    // it tracks exposure, but stripped of its colour: a fill carrying the
+    // sky's blue is why a grey receiver kept rendering as navy.
+    vec3 irrUp = shIrradiance(vec3(0.0, 1.0, 0.0));
+    float fillLum = dot(irrUp, vec3(0.2126, 0.7152, 0.0722));
     float fill = max(dot(N, normalize(V + vec3(0.0, 0.55, 0.0))), 0.0);
-    // A wrap term keeps faces turned fully away from the eye off the floor of
-    // the tone curve; a receiver that reads as a black cut-out is worse than a
-    // slightly flat one.
-    float wrap = 0.35 + 0.65 * fill;
-    ambient += albedo * shIrradiance(vec3(0.0, 1.0, 0.0)) * (0.48 * uViewmodelLight * wrap);
+    float wrap = 0.40 + 0.60 * fill;
+    ambient += albedo * fillLum * (0.72 * uViewmodelLight * wrap);
   }
 
   // aerial perspective is applied to the combined result later; split it here

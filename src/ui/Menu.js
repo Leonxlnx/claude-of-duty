@@ -173,9 +173,10 @@ export class Menu {
       this._slider('ADS multiplier', 0.2, 1.4, 0.02, Settings.data.adsMultiplier,
         (v) => this._set('adsMultiplier', v), (v) => v.toFixed(2)),
       this._toggle('Invert vertical', Settings.data.invertY, (v) => this._set('invertY', v)),
-      this._toggle('Fullscreen on deploy', Settings.data.fullscreenOnPlay !== false,
+      this._toggle('Fullscreen on deploy', Settings.data.fullscreenOnPlay === true,
         (v) => this._set('fullscreenOnPlay', v),
-        'Lets the game keep Ctrl+W and Ctrl+T. Off means crouch-walking forward closes the tab.')
+        'Also lets the game keep Ctrl+W. On some scaled displays the browser can '
+        + 'trap the cursor in a corner of the screen afterwards — turn this off if that happens.')
     ]));
 
     body.appendChild(this._group('Audio', [

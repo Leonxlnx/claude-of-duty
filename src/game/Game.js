@@ -321,6 +321,15 @@ export class Game {
       try { this.renderer?.dispose(); } catch { /* already gone */ }
       try { this.renderer?.forceContextLoss(); } catch { /* already gone */ }
     });
+    // Crouch is Ctrl and forward is W, and without fullscreen the browser owns
+    // Ctrl+W. A page cannot cancel it — but it can make it a question instead
+    // of an instant dead match. Only while actually playing: quitting from the
+    // menu should not nag.
+    window.addEventListener('beforeunload', (e) => {
+      if (this.state !== 'playing') return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
   }
 
   /**
