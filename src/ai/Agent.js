@@ -100,6 +100,13 @@ export class Agent {
     this.strafeDir = rng.next() < 0.5 ? -1 : 1;
     this.strafeTimer = 0;
 
+    // Being shot at, hit, or nearly blown up leaves a mark that decays: a
+    // stressed agent tracks worse and holds the trigger longer, which is what
+    // return fire from a human actually looks like.
+    this.stress = 0;
+    this._grenadeThreat = new THREE.Vector3();
+    this._fleeingGrenade = false;
+
     this.onFire = null;             // (origin, direction, agent) => void
     this.onReload = null;
     this.onVocal = null;            // callouts
@@ -219,6 +226,13 @@ export class Agent {
   /** Being shot at is the strongest sense there is. */
   onDamaged(info) {
     this.awareness = 1;
+    this.stress = Math.min(1, this.stress + 0.65);
+    // Taking a round interrupts the firing solution: the flinch knocks the
+    // aim off and buys the shooter a beat before return fire resumes. An
+    // agent that keeps tracking through hits reads as a turret.
+    this.reactionTimer = Math.max(this.reactionTimer, 0.22 + (1 - this.skill) * 0.25);
+    this.aimYaw += (this.rng.next() - 0.5) * 0.3;
+    this.aimPitch += (this.rng.next() - 0.5) * 0.18;
     if (info?.point) {
       this.suspicionPoint.copy(info.point);
       this.hasSuspicion = true;
@@ -234,6 +248,31 @@ export class Agent {
     }
   }
 
+  /**
+   * A live grenade in range overrides every other plan.
+   *
+   * The flee is a straight steering override rather than a state: it has to
+   * win instantly, survive for as long as the threat does, and hand back to
+   * whatever the agent was doing without re-planning. Nothing else in the
+   * machine works on a two-second fuse.
+   */
+  _checkGrenades(grenades) {
+    this._fleeingGrenade = false;
+    if (!grenades || !grenades.length) return;
+    const p = this.controller.position;
+    let nearest = null, nearestD2 = 11 * 11;
+    for (const g of grenades) {
+      const gp = g.body?.position;
+      if (!gp) continue;
+      const d2 = (gp.x - p.x) * (gp.x - p.x) + (gp.z - p.z) * (gp.z - p.z);
+      if (d2 < nearestD2) { nearestD2 = d2; nearest = gp; }
+    }
+    if (!nearest) return;
+    this._grenadeThreat.copy(nearest);
+    this._fleeingGrenade = true;
+    this.stress = Math.min(1, this.stress + 0.4);
+  }
+
   // ------------------------------------------------------------------ think
 
   update(dt, ctx) {
@@ -244,6 +283,8 @@ export class Agent {
     }
 
     this.stateTime += dt;
+    this.stress = Math.max(0, this.stress - dt * 0.35);
+    this._checkGrenades(ctx.grenades);
     this.sense(dt, ctx.enemies);
     this._think(dt, ctx);
     this._move(dt);
@@ -508,6 +549,17 @@ export class Agent {
     else if (this.state === AI_STATE.INVESTIGATE) speed = 2.8;
     if (this.stance === 'crouch') speed *= 0.55;
 
+    // A live grenade beats the plan: run straight away from it, upright, at a
+    // dead sprint, whatever the state machine had in mind.
+    if (this._fleeingGrenade) {
+      const dx = this.controller.position.x - this._grenadeThreat.x;
+      const dz = this.controller.position.z - this._grenadeThreat.z;
+      const d = Math.hypot(dx, dz) || 1e-4;
+      move.set(dx / d, 0, dz / d);
+      this.stance = 'stand';
+      speed = 5.6;
+    }
+
     // Separation from squadmates keeps a fireteam from stacking into one body.
     if (this._separation.lengthSq() > 1e-6) {
       move.add(this._separation);
@@ -585,7 +637,9 @@ export class Agent {
 
     this.aimNoisePhase += dt;
     const settle = 1 / (1 + this.trackTime * 2.4);
-    const jitter = lerpSkill(SKILL.aimError, s) * (0.35 + settle);
+    // Stress widens the cone: an agent that has just been hit or shot at does
+    // not track like one calmly resting on a windowsill.
+    const jitter = lerpSkill(SKILL.aimError, s) * (0.35 + settle) * (1 + this.stress * 1.5);
     this.aimYaw += Math.sin(this.aimNoisePhase * 2.7) * jitter * 0.5;
     this.aimPitch += Math.sin(this.aimNoisePhase * 3.9 + 1.3) * jitter * 0.35;
 
@@ -599,8 +653,10 @@ export class Agent {
     // Reaction delay before the first shot of an engagement.
     if (this.reactionTimer > 0) { this.reactionTimer -= dt; return; }
 
-    // Do not fire while sprinting for cover or while a teammate is in the way.
+    // Do not fire while sprinting for cover, fleeing a grenade, or while a
+    // teammate is in the way.
     if (this.state === AI_STATE.SEEK_COVER && !this.peeking) return;
+    if (this._fleeingGrenade) return;
     if (this._friendlyInLine(ctx)) return;
 
     const aimErr = angleBetweenYaw(this.aimYaw, yawTo(

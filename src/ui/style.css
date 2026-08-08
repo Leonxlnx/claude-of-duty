@@ -147,6 +147,16 @@ html, body {
   transition: opacity 420ms ease;
 }
 
+/* The HUD's anchored clusters glide in on deploy rather than popping. One
+   shared animation, staggered per corner, so the screen assembles itself. */
+@keyframes hud-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+#hud.visible #ammo { animation: hud-in 420ms 80ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+#hud.visible #vitals { animation: hud-in 420ms 140ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+#hud.visible #score-strip { animation: hud-in 420ms 0ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
 /* --- bottom-right ammo block */
 #ammo {
   position: absolute; right: 42px; bottom: 34px;
@@ -455,15 +465,27 @@ html, body {
 .menu-item:disabled::before { width: 0; }
 
 .menu-footer {
-  position: absolute; left: 96px; bottom: 74px;
+  position: absolute; left: 96px; bottom: 64px;
   font-family: var(--mono); font-size: 11px; color: var(--ink-faint);
-  letter-spacing: 0.14em; line-height: 2;
+  letter-spacing: 0.14em; line-height: 2.4;
+  padding: 12px 18px 10px 16px;
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  border-left: 2px solid var(--line);
+  animation: footer-in 480ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes footer-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
 }
 .menu-footer kbd {
-  display: inline-block; min-width: 20px; padding: 1px 5px; margin-right: 6px;
-  border: 1px solid var(--line); color: var(--ink-dim);
+  display: inline-block; min-width: 22px; padding: 2px 7px; margin-right: 6px;
+  border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 3px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink-dim);
   font-family: var(--mono); font-size: 10px; text-align: center;
+  transition: color 140ms, border-color 140ms;
 }
+.menu-footer:hover kbd { color: var(--ink); border-color: var(--ink-faint); }
 
 /* --- settings panel */
 .panel {

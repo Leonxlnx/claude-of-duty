@@ -228,7 +228,8 @@ export class Director {
       const team = agent.character.team;
       agent.update(dt, {
         enemies: team === 'A' ? teamACache : teamBCache,
-        allies: team === 'A' ? alliesA : alliesB
+        allies: team === 'A' ? alliesA : alliesB,
+        grenades: this.combat?.liveGrenades ?? EMPTY
       });
     }
   }
@@ -267,3 +268,4 @@ const AI_ROUND = {
 
 export { AI_ROUND };
 const _spawn = new THREE.Vector3();
+const EMPTY = [];

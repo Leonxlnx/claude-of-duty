@@ -400,6 +400,42 @@ test.describe('grenades', () => {
     expect(blast.damaged).toBeGreaterThan(40);
     if (blast.shieldedUnhurt !== null) expect(blast.shieldedUnhurt).toBe(100);
   });
+
+  test('the AI runs from a grenade landing at its feet', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 1500);
+
+    const flee = await page.evaluate(async () => {
+      const g = window.__game;
+      const h = window.__harness;
+      const Vec = g.player.eye.constructor;
+      const victim = g.director.agents.find((a) => a.alive);
+      if (!victim) return null;
+
+      // Drop a live grenade next to them with most of the fuse left, thrown
+      // gently downward so it stays put instead of rolling out of relevance.
+      const at = new Vec().copy(victim.controller.position);
+      const start = new Vec().copy(at); start.y += 1.4;
+      g.combat.throwGrenade({
+        position: start, velocity: new Vec(0, -1, 0),
+        owner: g.playerTarget, team: 'A'
+      });
+
+      const before = { x: at.x, z: at.z };
+      await h.wait(1.2);
+      const p = victim.controller.position;
+      return {
+        fled: victim._fleeingGrenade || Math.hypot(p.x - before.x, p.z - before.z) > 2,
+        distance: Math.hypot(p.x - before.x, p.z - before.z),
+        alive: victim.alive
+      };
+    });
+
+    if (!flee) test.skip(true, 'no living enemy to threaten');
+    // Two seconds of fuse at a sprint should put real ground between them.
+    expect(flee.fled).toBe(true);
+    expect(flee.distance).toBeGreaterThan(1.5);
+  });
 });
 
 test.describe('respawn', () => {

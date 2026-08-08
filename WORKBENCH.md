@@ -33,9 +33,37 @@ real pixels, not intentions.
 - Three independent critics (environment, weapon/HUD, characters) reviewing
   against the bar. Their top gaps drive the next builder pass.
 
-## Round 2 — planned
+## Round 1 — critic findings (done)
 
-- Builder pass from critic findings: buildings, sky, street detail.
-- AI realism pass: fire discipline, reaction to being shot at, use of
-  windows/doorways.
-- HUD smoothness pass.
+Three independent critics reviewed `shots/gauntlet/round1/`. Verdict: every
+shot lost to the bar. Top gaps, in their order: a rose tint over the whole
+frame, a weapon reading as one dark slab with no hands in sight, flat
+facades/rooflines, and shapeless clouds with a hard seam.
+
+## Round 2 — builder passes (done)
+
+- **Midday light.** Sun raised from 41° to 57° and nearly white; cloud
+  radiance rebuilt (neutral sun colour, modest phase, cluster mask so cumulus
+  forms heaps with blue between); grade LUT's warm push halved. The rose tint
+  and the cloud seam are gone — verified against `shots/gauntlet/round2/`.
+- **Readable weapon.** A wrapped sun key now fills only where real sunlight
+  cannot reach, and the over-shoulder fill uses the sky's luminance without
+  its colour. The receiver reads grey with rail/receiver separation instead
+  of navy silhouette; the support-arm sleeve is visible in frame.
+- **Skyline.** Two hazed rings of rough blocks with rooftop bumps continue
+  the town past the boundary walls, so sightlines no longer end in a bare
+  plaster slab.
+- **Cursor trap, third layer.** Fullscreen-on-play and raw input are both
+  opt-in now, and the lock is released on focus loss.
+- **AI realism.** Agents flee live grenades at a sprint (tested), flinch off
+  their firing solution when hit, and carry a decaying stress value that
+  widens their fire under pressure.
+- **HUD.** Anchored clusters glide in on deploy; the controls footer became a
+  proper keycap panel.
+
+## Round 3 — candidates
+
+- Enemy character presentation (vest/helmet/rifle silhouette) — the round-1
+  critic shot framed no enemy; needs a reliable close-up pose first.
+- Market-lane counters and the flat blue-grey stall boxes.
+- Suppression wired to near misses, not only to hits.
