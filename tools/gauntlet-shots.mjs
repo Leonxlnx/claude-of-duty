@@ -32,11 +32,14 @@ await page.waitForFunction(() => window.__ready === true, { timeout: 180000 });
 // Full resolution, highest preset: judge the game, not the test rig.
 await page.evaluate(async () => {
   const h = window.__harness, g = window.__game;
-  h.setQuality('ultra');
+  h.setSetting('quality', 8);
   h.setSetting('dynres', false);
   h.setSetting('showFps', false);   // the perf readout is not part of the game
   g.hud.setVisible(false);          // nor is the rest of it: judge the world
-  g.graph.setRenderScale?.(1);
+  // No setRenderScale(1) here: that pinned the graph back to native and threw
+  // away the supersampling the quality level had just asked for, so a capture
+  // at level 8 was really a capture at level 4. Dynamic resolution is off
+  // above, which is what that line was actually guarding against.
   g.player.spawnProtect = 1e9;
   // Agents wandering through a composed frame make two rounds incomparable.
   h.freezeAI(true);
