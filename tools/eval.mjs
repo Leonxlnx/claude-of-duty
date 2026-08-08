@@ -14,7 +14,15 @@ const query = process.argv[3] || '?auto=1&dynres=0';
 const port = process.env.PORT || 5199;
 
 const browser = await chromium.launch({
-  args: ['--use-gl=angle', '--use-angle=gl', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
+  args: [
+    '--use-gl=angle', '--use-angle=gl', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist',
+    // Without this every frame is pinned to the display's 16.7ms and any
+    // measurement of frame cost reads back exactly 16.7ms at every quality
+    // level — which is the refresh rate, not the renderer. The Playwright
+    // config has always had it; this tool did not, so every perf number taken
+    // through `eval.mjs` was meaningless.
+    '--disable-frame-rate-limit', '--enable-gpu-rasterization'
+  ]
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 

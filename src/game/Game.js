@@ -933,8 +933,15 @@ export class Game {
       let next = this._dynScale;
       if (avg > target * 1.25) next = this._dynScale - DYNRES_STEP;
       else if (avg < target * 0.80) next = this._dynScale + DYNRES_STEP;
+      // The floor is absolute, not a fraction of the level's scale. As a
+      // fraction it scaled with the thing it exists to rescue you from: at
+      // level 10 the base is 2.0, so the safety net sat at 1.2x native and
+      // dynamic resolution could not pull a struggling machine below four
+      // times the pixels of its own display. Picking a high level would have
+      // been unrecoverable.
       next = THREE.MathUtils.clamp(
-        Math.round(next / DYNRES_STEP) * DYNRES_STEP, base * DYNRES_FLOOR, base
+        Math.round(next / DYNRES_STEP) * DYNRES_STEP,
+        Math.min(DYNRES_FLOOR, base), base
       );
       if (Math.abs(next - this.graph.renderScale) > 1e-3) {
         this._dynScale = next;

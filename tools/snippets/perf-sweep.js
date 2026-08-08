@@ -12,8 +12,15 @@ const sample = (seconds) => new Promise((resolve) => {
       g.onFrame = prev;
       const ms = rows.map((r) => r.ms).sort((a, b) => a - b);
       const cpu = rows.map((r) => r.cpu).sort((a, b) => a - b);
+      // Mean frame time, not the median. Under load the distribution goes
+      // bimodal — a run of cheap frames between long stalls — and the median
+      // then reports the cheap ones and hides that the frame count collapsed.
+      // Frames delivered per second is the number that cannot lie.
+      const elapsed = (performance.now() - start) / 1000;
       resolve({
         frames: rows.length,
+        fps: +(rows.length / elapsed).toFixed(1),
+        meanMs: +(1000 * elapsed / rows.length).toFixed(1),
         p50: +ms[ms.length >> 1].toFixed(1),
         p95: +ms[Math.floor(ms.length * 0.95)].toFixed(1),
         cpu50: +cpu[cpu.length >> 1].toFixed(1)

@@ -51,24 +51,32 @@ export const QUALITY_LEVELS = [
     cloudSteps: 64, particleDensity: 1.6, motionBlur: 'off', bloom: true, taa: true,
     contactShadows: true, decalBudget: 512, maxRigidBodies: 340, heatHaze: true, sharpen: 0.38
   },
+  // Levels 7-10 spend almost everything they cost on render scale, because
+  // that is the lever the eye actually reads. The others are deliberately held
+  // back: measured, an 8192 map across 5 cascades is 335MB of depth on its own
+  // and bought nothing a 4096 map does not already resolve, and a 120-step
+  // cloud march is the most expensive pass in the frame for a layer that
+  // composites at half resolution behind everything. Both were most of why
+  // level 10 collapsed to single-figure frame rates while looking no sharper
+  // than 8.
   { // 7
-    renderScale: 1.45, shadowResolution: 4096, shadowCascades: 5, aoSamples: 18, aoEnabled: true,
-    cloudSteps: 76, particleDensity: 1.75, motionBlur: 'off', bloom: true, taa: true,
+    renderScale: 1.45, shadowResolution: 4096, shadowCascades: 4, aoSamples: 18, aoEnabled: true,
+    cloudSteps: 64, particleDensity: 1.75, motionBlur: 'off', bloom: true, taa: true,
     contactShadows: true, decalBudget: 576, maxRigidBodies: 380, heatHaze: true, sharpen: 0.40
   },
   { // 8
-    renderScale: 1.6, shadowResolution: 6144, shadowCascades: 5, aoSamples: 20, aoEnabled: true,
-    cloudSteps: 88, particleDensity: 1.9, motionBlur: 'off', bloom: true, taa: true,
+    renderScale: 1.6, shadowResolution: 4096, shadowCascades: 5, aoSamples: 20, aoEnabled: true,
+    cloudSteps: 72, particleDensity: 1.9, motionBlur: 'off', bloom: true, taa: true,
     contactShadows: true, decalBudget: 640, maxRigidBodies: 420, heatHaze: true, sharpen: 0.42
   },
   { // 9
-    renderScale: 1.8, shadowResolution: 6144, shadowCascades: 5, aoSamples: 22, aoEnabled: true,
-    cloudSteps: 104, particleDensity: 2.0, motionBlur: 'off', bloom: true, taa: true,
+    renderScale: 1.8, shadowResolution: 4096, shadowCascades: 5, aoSamples: 20, aoEnabled: true,
+    cloudSteps: 80, particleDensity: 2.0, motionBlur: 'off', bloom: true, taa: true,
     contactShadows: true, decalBudget: 704, maxRigidBodies: 460, heatHaze: true, sharpen: 0.44
   },
   { // 10 — 4x the pixels of native. For a machine with nothing better to do.
-    renderScale: 2.0, shadowResolution: 8192, shadowCascades: 5, aoSamples: 24, aoEnabled: true,
-    cloudSteps: 120, particleDensity: 2.2, motionBlur: 'off', bloom: true, taa: true,
+    renderScale: 2.0, shadowResolution: 6144, shadowCascades: 5, aoSamples: 22, aoEnabled: true,
+    cloudSteps: 88, particleDensity: 2.2, motionBlur: 'off', bloom: true, taa: true,
     contactShadows: true, decalBudget: 768, maxRigidBodies: 500, heatHaze: true, sharpen: 0.46
   }
 ];

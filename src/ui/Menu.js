@@ -172,9 +172,11 @@ export class Menu {
         (v) => `${v}${v === 4 ? ' (ultra)' : ''}${v >= 5 ? ` · ${QUALITY_LEVELS[v - 1].renderScale}x` : ''}`,
         '4 is the old ultra. 5 and up render above your display resolution and '
         + 'downsample, which is the biggest single lever on how sharp a frame '
-        + 'looks. From 6 the material textures are baked at double density and '
-        + 'anisotropic filtering doubles — those are set when the page loads, '
-        + 'so reload after crossing 6.'),
+        + 'looks — and the most expensive: 8 is 2.6x the pixels of native, 10 '
+        + 'is 4x. From 6 the material textures bake at double density and '
+        + 'anisotropic filtering doubles; those are set when the page loads, so '
+        + 'reload after crossing 6. Watch the frame counter and come back down '
+        + 'if it drops — nothing above 6 is free.'),
       this._slider('Field of view', 70, 110, 1, Settings.data.fov,
         (v) => this._set('fov', v), (v) => `${v}°`),
       this._slider('Viewmodel FOV', 50, 80, 1, Settings.data.viewmodelFov,
