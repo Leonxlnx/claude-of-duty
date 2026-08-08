@@ -32,20 +32,33 @@ export const BONE_LENGTH = {
   [BONE.THIGH_R]: 0.42, [BONE.SHIN_R]: 0.42, [BONE.FOOT_R]: 0.10
 };
 
+/**
+ * Kit colours, chosen for how far apart they are rather than for realism.
+ *
+ * The albedo texture is multiplied by these, so a palette whose entries sit
+ * within a tenth of each other — which team B's did — comes out of the shader
+ * as one crushed value and the soldier reads as a grey mannequin however much
+ * geometry is layered onto it. Every set now spans roughly 4:1 in value from
+ * uniform to carrier, so the vest separates from the sleeves in sunlight and in
+ * shade, and carries one saturated accent that survives out to thirty metres,
+ * which is the only part of a soldier that still reads at that range.
+ */
 export const TEAM_PALETTES = {
   A: {
-    uniform: [0.52, 0.48, 0.36],
-    carrier: [0.34, 0.33, 0.27],
-    helmet: [0.36, 0.35, 0.30],
-    accent: [0.55, 0.42, 0.22],
-    gloves: [0.20, 0.19, 0.17]
+    uniform: [0.62, 0.57, 0.42],   // sun-bleached tan
+    carrier: [0.24, 0.24, 0.20],   // dark olive plate carrier
+    helmet: [0.44, 0.42, 0.34],
+    accent: [0.24, 0.46, 0.70],    // team blue
+    gloves: [0.18, 0.17, 0.15],
+    skin: [0.70, 0.51, 0.38]
   },
   B: {
-    uniform: [0.36, 0.34, 0.32],
-    carrier: [0.22, 0.22, 0.23],
-    helmet: [0.24, 0.24, 0.25],
-    accent: [0.42, 0.16, 0.14],
-    gloves: [0.16, 0.16, 0.16]
+    uniform: [0.47, 0.45, 0.42],   // grey-green field uniform
+    carrier: [0.14, 0.14, 0.15],   // near-black carrier
+    helmet: [0.27, 0.28, 0.29],
+    accent: [0.66, 0.15, 0.11],    // team red
+    gloves: [0.11, 0.11, 0.11],
+    skin: [0.60, 0.42, 0.32]
   }
 };
 
@@ -76,10 +89,13 @@ export function buildSoldier(team = 'A', variant = 0, rng) {
   const carrier = { layer: NYLON, tint: jitter(pal.carrier, 0.10), wear: 0.65, uvScale: 6.5 };
   const helmetMat = { layer: POLY, tint: jitter(pal.helmet, 0.08), wear: 0.55, uvScale: 7 };
   const glove = { layer: POLY, tint: pal.gloves, wear: 0.6, uvScale: 12 };
-  const boot = { layer: POLY, tint: [0.17, 0.15, 0.13], wear: 0.75, uvScale: 8 };
-  const skin = { layer: CLOTH, tint: [0.62, 0.44, 0.33], wear: 0.25, uvScale: 14 };
+  const boot = { layer: POLY, tint: [0.15, 0.13, 0.12], wear: 0.75, uvScale: 8 };
+  const skin = { layer: CLOTH, tint: pal.skin, wear: 0.25, uvScale: 14 };
   const accent = { layer: NYLON, tint: pal.accent, wear: 0.6, uvScale: 9 };
   const gun = { layer: METAL, tint: [1, 1, 1], wear: 0.6, uvScale: 9 };
+  // Team marking. Big, flat and unshaded by detail — this is the part that has
+  // to survive being four pixels tall, so it gets no wear and no fine uv.
+  const mark = { layer: NYLON, tint: pal.accent, wear: 0.15, uvScale: 3 };
 
   const b = new GeometryBuilder(null, `soldier-${team}`);
 
@@ -117,13 +133,19 @@ export function buildSoldier(team = 'A', variant = 0, rng) {
   // admin pouch, radio, IFAK
   pouch(b, 0.108, 0.150, -0.128, 0.070, 0.070, 0.042, accent);
   b.addBox(-0.118, 0.150, 0.106, 0.060, 0.100, 0.048, { ...carrier, tint: [0.16, 0.16, 0.17] });
-  b.addCylinder(-0.118, 0.198, 0.106, 0.005, 0.004, 0.135, 6, { ...gun, tint: [0.12, 0.12, 0.12], caps: false });
+  // Radio whip. Long enough to break the head-and-shoulders rectangle, which
+  // is most of what tells a soldier from a post at a distance.
+  b.addCylinder(-0.118, 0.198, 0.106, 0.005, 0.004, 0.30, 6, { ...gun, tint: [0.12, 0.12, 0.12], caps: false });
   pouch(b, 0.120, 0.020, 0.104, 0.060, 0.075, 0.048, carrier);
   // hydration bladder
   b.addBox(0, 0.130, 0.132, 0.190, 0.180, 0.060, { ...carrier, tint: mul(carrier.tint, 0.85) });
   // shoulder straps and buckles
   b.addBox(0.075, 0.190, -0.100, 0.045, 0.040, 0.030, { ...accent, tint: mul(accent.tint, 0.8) });
   b.addBox(-0.075, 0.190, -0.100, 0.045, 0.040, 0.030, { ...accent, tint: mul(accent.tint, 0.8) });
+  // Team panel across the top of the carrier, front and back. A soldier at
+  // thirty metres is a dozen pixels of torso; this is what colours them.
+  b.addBox(0, 0.176, -0.122, 0.150, 0.052, 0.014, mark);
+  b.addBox(0, 0.176, 0.118, 0.150, 0.052, 0.014, mark);
 
   b.setBone(BONE.HEAD);
   // neck, then head, then helmet shell over it

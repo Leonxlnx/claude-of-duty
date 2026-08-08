@@ -43,13 +43,6 @@ const DEFAULTS = {
   cameraShake: 0.85,
   showFps: true,
   difficulty: 'regular',
-  // Off by default. Fullscreen is what lets the Keyboard Lock API take Ctrl+W
-  // off the browser — but the fullscreen + pointer-lock combination is also
-  // what leaves Chromium's cursor clip stale on some scaled displays, pinning
-  // the visible cursor into a quarter of the screen after every match. A
-  // confirmation on leaving the page covers accidental Ctrl+W instead; anyone
-  // who wants true fullscreen can turn it on in settings.
-  fullscreenOnPlay: false,
   // Raw (unadjusted) mouse input. Skips OS pointer acceleration, but its
   // Windows path is implicated in the stuck cursor clip on scaled displays.
   rawInput: false,

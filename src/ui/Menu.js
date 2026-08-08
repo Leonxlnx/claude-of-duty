@@ -89,6 +89,16 @@ export class Menu {
       b.addEventListener('mouseenter', () => this.audio?.playUI('hover'));
     }
 
+    // Which build is on screen, and whether the mouse settings are the safe
+    // ones. Both questions come up every time the cursor misbehaves, and both
+    // are unanswerable from a running tab without this.
+    const stamp = this.el.querySelector('.build-stamp');
+    if (stamp) {
+      const build = typeof __BUILD_STAMP__ === 'string' ? __BUILD_STAMP__ : 'dev';
+      stamp.textContent = `build ${build} · mouse: pointer lock only`
+        + (Settings.data.rawInput === true ? ', raw input ON' : '');
+    }
+
     this.dom.btnPrimary.addEventListener('click', () => {
       this.audio?.playUI('click');
       if (this.mode === 'start') this.onStart?.();
@@ -173,10 +183,6 @@ export class Menu {
       this._slider('ADS multiplier', 0.2, 1.4, 0.02, Settings.data.adsMultiplier,
         (v) => this._set('adsMultiplier', v), (v) => v.toFixed(2)),
       this._toggle('Invert vertical', Settings.data.invertY, (v) => this._set('invertY', v)),
-      this._toggle('Fullscreen on deploy', Settings.data.fullscreenOnPlay === true,
-        (v) => this._set('fullscreenOnPlay', v),
-        'Also lets the game keep Ctrl+W. On some scaled displays the browser can '
-        + 'trap the cursor in a corner of the screen afterwards — turn this off if that happens.'),
       this._toggle('Raw mouse input', Settings.data.rawInput === true,
         (v) => this._set('rawInput', v),
         'Skips pointer acceleration for aiming. Leave off if the cursor ever '
@@ -342,9 +348,12 @@ export class Menu {
     this.dom.title.textContent = 'STAND BY';
     this.dom.sub.textContent = 'The match is still running in the background. Take your time.';
     this.dom.btnPrimary.querySelector('span').textContent = 'Resume';
-    this.dom.btnPrimary.querySelector('.hint').textContent = 'ESC';
+    this.dom.btnPrimary.querySelector('.hint').textContent = 'ENTER';
     this.dom.btnRestart.style.display = '';
     this.dom.btnQuit.style.display = '';
+    // Spelled out because the case that needs them is the one where the mouse
+    // cannot reach the buttons at all.
+    this.dom.btnQuit.querySelector('.hint').textContent = 'Q';
   }
 
   hide() {
@@ -429,7 +438,8 @@ const TEMPLATE = /* html */`
   <div><kbd>WASD</kbd> move &nbsp; <kbd>SHIFT</kbd> sprint &nbsp; <kbd>CTRL</kbd> crouch &nbsp; <kbd>C</kbd> slide &nbsp; <kbd>SPACE</kbd> jump</div>
   <div><kbd>Q</kbd> <kbd>E</kbd> peek round corners &nbsp; <kbd>LMB</kbd> fire &nbsp; <kbd>RMB</kbd> aim</div>
   <div><kbd>B</kbd> grenade, hold <kbd>LMB</kbd> for range &nbsp; <kbd>R</kbd> reload &nbsp; <kbd>V</kbd> fire mode &nbsp; <kbd>F</kbd> inspect</div>
-  <div><kbd>TAB</kbd> scoreboard &nbsp; <kbd>ESC</kbd> pause</div>
+  <div><kbd>TAB</kbd> scoreboard &nbsp; <kbd>ESC</kbd> pause, <kbd>ENTER</kbd> resume, <kbd>Q</kbd> abandon</div>
+  <div class="build-stamp"></div>
 </div>
 <div class="panel">
   <h2>Settings</h2>

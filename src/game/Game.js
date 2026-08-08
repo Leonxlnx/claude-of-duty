@@ -965,6 +965,15 @@ export class Game {
       return true;
     }
     if (code === 'Enter' && this.state === 'menu') { this.startMatch(); return true; }
+    // The pause menu has to be operable without a mouse. If the browser has
+    // left the OS cursor confined to a corner of the screen, the Resume and
+    // Quit buttons are somewhere the pointer cannot reach, and a player who
+    // cannot click is a player who cannot leave. These are the way out.
+    if (this.state === 'paused') {
+      if (code === 'Enter') { this.resume(); return true; }
+      if (code === 'KeyQ') { this.quitToMenu(); return true; }
+    }
+    if (code === 'Enter' && this.state === 'ended') { this.startMatch(); return true; }
     if (code === 'KeyO' && this.menu.visible) { this.menu.toggleSettings(); return true; }
     if (code === 'Backquote') {
       this.graph.debugView = (this.graph.debugView + 1) % 10;

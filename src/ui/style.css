@@ -486,6 +486,9 @@ html, body {
   transition: color 140ms, border-color 140ms;
 }
 .menu-footer:hover kbd { color: var(--ink); border-color: var(--ink-faint); }
+.menu-footer .build-stamp {
+  margin-top: 6px; opacity: 0.42; font-size: 10px; letter-spacing: 0.1em;
+}
 
 /* --- settings panel */
 .panel {

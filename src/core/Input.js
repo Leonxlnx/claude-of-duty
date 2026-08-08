@@ -110,21 +110,20 @@ export class Input {
   }
 
   /**
-   * Take the mouse, and fullscreen with it.
+   * Take the mouse. Never fullscreen with it.
    *
-   * Fullscreen is not cosmetic here: it is the only state in which the Keyboard
-   * Lock API will hand over Ctrl+W and Ctrl+T. Crouch is Ctrl, so without it a
-   * player who crouch-walks forward closes the tab, and no amount of
-   * preventDefault on the page can stop that.
+   * The game used to enter fullscreen alongside the lock, because fullscreen is
+   * the only state in which the Keyboard Lock API will hand over Ctrl+W. That
+   * trade is not worth it: Chromium confines the OS cursor with a clip
+   * rectangle while the pointer is locked, and in fullscreen that rectangle is
+   * the whole screen — so when it goes stale on a scaled display the cursor is
+   * pinned into a quarter of the desktop rather than a quarter of a window,
+   * and the player cannot reach anything. Ctrl+W is covered by the
+   * `beforeunload` confirm during a live match instead, and F11 is still the
+   * player's own to press. Nothing here asks for fullscreen any more.
    */
   async requestLock() {
     if (this.locked) return;
-    if (!document.fullscreenElement && Settings.data.fullscreenOnPlay !== false) {
-      try {
-        await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
-        this._enteredFullscreen = true;
-      } catch { /* denied or unsupported */ }
-    }
     // Raw mouse input (unadjustedMovement) bypasses pointer acceleration, but
     // on Windows it also takes a different cursor-confinement path — the one
     // implicated when the visible cursor stays pinned to a corner of the
