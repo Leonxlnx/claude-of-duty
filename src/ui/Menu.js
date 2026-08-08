@@ -169,7 +169,12 @@ export class Menu {
     body.appendChild(this._group('Display', [
       this._slider('Quality', 1, 10, 1, Settings.qualityLevel,
         (v) => this._set('quality', v),
-        (v) => `${v}${v === 4 ? ' (ultra)' : ''}${v >= 5 ? ` · ${QUALITY_LEVELS[v - 1].renderScale}x` : ''}`),
+        (v) => `${v}${v === 4 ? ' (ultra)' : ''}${v >= 5 ? ` · ${QUALITY_LEVELS[v - 1].renderScale}x` : ''}`,
+        '4 is the old ultra. 5 and up render above your display resolution and '
+        + 'downsample, which is the biggest single lever on how sharp a frame '
+        + 'looks. From 6 the material textures are baked at double density and '
+        + 'anisotropic filtering doubles — those are set when the page loads, '
+        + 'so reload after crossing 6.'),
       this._slider('Field of view', 70, 110, 1, Settings.data.fov,
         (v) => this._set('fov', v), (v) => `${v}°`),
       this._slider('Viewmodel FOV', 50, 80, 1, Settings.data.viewmodelFov,
@@ -333,8 +338,14 @@ export class Menu {
     return { row, control: c };
   }
 
-  _slider(label, min, max, step, value, onChange, format = (v) => String(v)) {
+  _slider(label, min, max, step, value, onChange, format = (v) => String(v), hint = '') {
     const { row, control } = this._row(label);
+    if (hint) {
+      const h = document.createElement('span');
+      h.className = 'setting-hint';
+      h.textContent = hint;
+      row.querySelector('label').appendChild(h);
+    }
     const input = document.createElement('input');
     input.type = 'range';
     input.min = min; input.max = max; input.step = step; input.value = value;

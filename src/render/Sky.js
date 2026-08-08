@@ -181,7 +181,31 @@ export class Sky {
     this.cloudShadowOffset.y += this.wind.y * dt * 0.0016;
   }
 
-  renderClouds(camera) {
+  /**
+   * March the cloud deck.
+   *
+   * The single most expensive pass in the frame at high quality — up to 120
+   * raymarch steps per pixel — and the one with the least to show for being
+   * redrawn every frame: the deck evolves over minutes and the layer is
+   * composited at half resolution behind everything else. Redrawing it on
+   * alternate frames is invisible and hands back a large slice of the GPU
+   * budget, which is the same trade the far shadow cascades already make.
+   *
+   * The camera is the exception — a fast turn does move the clouds across the
+   * screen — so a frame where the view has moved meaningfully re-marches
+   * regardless.
+   */
+  renderClouds(camera, force = false) {
+    this._cloudFrame = (this._cloudFrame ?? 0) + 1;
+    const moved = this._lastCloudQuat
+      ? camera.quaternion.angleTo(this._lastCloudQuat) > 0.012
+      : true;
+    if (!force && !moved && (this._cloudFrame & 1)) return;
+    this._lastCloudQuat = (this._lastCloudQuat ?? camera.quaternion.clone()).copy(camera.quaternion);
+    this._renderClouds(camera);
+  }
+
+  _renderClouds(camera) {
     _invVP.copy(camera.projectionMatrix).multiply(camera.matrixWorldInverse).invert();
     this.cloudPass.uniforms.uInvViewProjection.value.copy(_invVP);
     this.cloudPass.uniforms.uCameraPos.value.copy(camera.position);

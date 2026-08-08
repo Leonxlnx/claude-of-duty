@@ -499,7 +499,17 @@ void main(){
 `;
 
 export class MaterialLibrary {
-  constructor(renderer, size = 512) {
+  /**
+   * @param size  Edge of every layer in the material arrays. This is the hard
+   *   ceiling on surface detail: at 512 a wall carries the same texel density
+   *   whether it fills the screen or sits forty metres away, and no amount of
+   *   render resolution recovers what the source never had. Memory is the
+   *   reason it is not simply large — three arrays of `LAYER_COUNT` RGBA8
+   *   layers is 63MB at 512 and 252MB at 1024, before mipmaps.
+   * @param anisotropy  Requested max anisotropy, clamped to what the GPU has.
+   */
+  constructor(renderer, size = 512, anisotropy = 8) {
+    this.anisotropy = anisotropy;
     this.renderer = renderer;
     this.size = size;
     this.albedo = null;
@@ -544,7 +554,14 @@ export class MaterialLibrary {
       rt.texture.minFilter = THREE.LinearMipmapLinearFilter;
       rt.texture.magFilter = THREE.LinearFilter;
       rt.texture.generateMipmaps = true;
-      rt.texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      // Anisotropy is what keeps a ground plane sharp at a grazing angle,
+      // which is most of the frame in a first-person game. Capping it at 8
+      // left the street mushy toward the horizon no matter how high the
+      // render resolution went, because the limit was the filter, not the
+      // sample count.
+      rt.texture.anisotropy = Math.min(
+        this.anisotropy, renderer.capabilities.getMaxAnisotropy()
+      );
     }
 
     // Published as soon as they exist, not once they are painted. The material

@@ -198,7 +198,15 @@ export class Game {
     // that window instead of after it. Only the texture arrays themselves have
     // to exist now, and the constructor allocates those.
     await loading.step(0.10, 'Generating materials');
-    this.materialLibrary = new MaterialLibrary(this.renderer, 512);
+    // Material resolution is chosen once, here, because the arrays are baked
+    // at boot and resizing them means rebuilding every layer — so a quality
+    // change mid-session moves everything except this, and this follows on the
+    // next load. 1024 quadruples texel density for ~250MB of texture memory;
+    // 2048 would be a gigabyte, which is not a trade worth offering.
+    const level = Settings.qualityLevel;
+    this.materialLibrary = new MaterialLibrary(
+      this.renderer, level >= 6 ? 1024 : 512, level >= 6 ? 16 : 8
+    );
     const materialsCompiled = this.materialLibrary.compile();
 
     await loading.step(0.16, 'Building render graph');
