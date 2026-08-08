@@ -43,6 +43,8 @@ const DEFAULTS = {
   cameraShake: 0.85,
   showFps: true,
   difficulty: 'regular',
+  // dawn | morning | day | sunset | night — see TIME_OF_DAY in render/Sky.js
+  timeOfDay: 'day',
   // Raw (unadjusted) mouse input. Skips OS pointer acceleration, but its
   // Windows path is implicated in the stuck cursor clip on scaled displays.
   rawInput: false,

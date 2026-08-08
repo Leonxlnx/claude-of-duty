@@ -202,11 +202,11 @@ export class Game {
     this.graph.debugView = parseInt(qp.get('debug') ?? '0', 10) || 0;
 
     await loading.step(0.22, 'Baking sky and irradiance');
-    // High sun, late morning. At 41 degrees the sun colour curve tinted every
-    // white surface — and through the irradiance bake, the whole district —
-    // visibly warm, and bright clouds rolled through the tonemapper into
-    // salmon. Midday light is nearly white and the map reads sunlit again.
-    this.graph.sky.setSun(116, 57);
+    // The 'day' preset is the high midday sun the district was tuned for. At
+    // 41 degrees the sun colour curve tinted every white surface — and through
+    // the irradiance bake, the whole district — visibly warm, and bright
+    // clouds rolled through the tonemapper into salmon.
+    this.graph.sky.setTimeOfDay(Settings.data.timeOfDay ?? 'day');
     this.graph.sky.bake();
     this.graph.updateSkyUniforms();
 
@@ -691,7 +691,11 @@ export class Game {
         damageFlash: this.hud.damageFlash,
         criticalHealth: this.player.alive
           ? Math.max(0, 1 - this.player.health / 32) : 1,
-        motionBlurScale: MOTION_BLUR_REFERENCE_DT / Math.max(dt, 1e-4)
+        // Never amplify past the reference shutter. Rescaling to a fixed 1/60
+        // is right for a machine running slower than that, but above it the
+        // same formula multiplies: at 144 Hz it asked for 2.4x the streak, so
+        // the better the monitor the worse the smear. Scaling down only.
+        motionBlurScale: Math.min(1, MOTION_BLUR_REFERENCE_DT / Math.max(dt, 1e-4))
       }
     );
 
@@ -945,6 +949,16 @@ export class Game {
       this.combat.setQuality?.(this.quality);
       this._dynScale = this.quality.renderScale;
       this._resizePending = true;
+    }
+    if (key === 'timeOfDay' || key === '*') {
+      // The bake is the expensive half and the half that matters: the SH
+      // irradiance is where the sky's colour becomes the district's ambient,
+      // so changing the sun without re-baking leaves every surface lit for the
+      // old time of day. Then the uniforms have to be pushed, or the shaders
+      // keep the old sun direction and the shadows point the wrong way.
+      this.graph.sky.setTimeOfDay(Settings.data.timeOfDay ?? 'day');
+      this.graph.sky.bake();
+      this.graph.updateSkyUniforms();
     }
     if (key === 'fov' || key === 'viewmodelFov' || key === '*') this._resizePending = true;
     if (key === 'masterVolume' || key === '*') {

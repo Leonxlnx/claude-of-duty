@@ -167,6 +167,13 @@ export class Menu {
     ]));
 
     body.appendChild(this._group('Image', [
+      // Its own control rather than a property of the quality preset. Motion
+      // blur is the most divisive effect in the pipeline and the one most
+      // likely to be read as the game stuttering, so it cannot only be
+      // reachable by dropping every other setting with it.
+      this._segment('Motion blur', ['off', 'low', 'high'],
+        Settings.data.overrides?.motionBlur ?? Settings.preset.motionBlur,
+        (v) => this._setOverride('motionBlur', v)),
       this._slider('Film grain', 0, 1, 0.05, Settings.data.filmGrain,
         (v) => this._set('filmGrain', v), pct),
       this._slider('Chromatic aberration', 0, 1, 0.05, Settings.data.chromaticAberration,
@@ -196,7 +203,13 @@ export class Menu {
 
     body.appendChild(this._group('Match', [
       this._segment('AI difficulty', ['recruit', 'regular', 'veteran', 'elite'],
-        Settings.data.difficulty, (v) => this._set('difficulty', v))
+        Settings.data.difficulty, (v) => this._set('difficulty', v),
+        'Sets how fast they react and how straight they shoot, and how hard '
+        + 'they work the map: veterans and elites flank, use cover and stay '
+        + 'suppressed. Applies from the next deploy.'),
+      this._segment('Time of day', ['dawn', 'morning', 'day', 'sunset', 'night'],
+        Settings.data.timeOfDay ?? 'day', (v) => this._set('timeOfDay', v),
+        'Changes the light, not just the sky. Takes effect immediately.')
     ]));
 
     const binds = document.createElement('div');
@@ -243,6 +256,19 @@ export class Menu {
   _set(key, value) {
     Settings.set(key, value);
     this.onSettingChanged?.(key, value);
+    this.audio?.playUI('click');
+  }
+
+  /**
+   * Pin one property of the quality preset without changing the preset.
+   *
+   * `Settings.preset` is the preset spread under `overrides`, so writing here
+   * survives a preset change and keeps the player's choice about an individual
+   * effect separate from their choice about how hard to push the machine.
+   */
+  _setOverride(key, value) {
+    Settings.set('overrides', { ...Settings.data.overrides, [key]: value });
+    this.onSettingChanged?.('quality', value);
     this.audio?.playUI('click');
   }
 
@@ -304,8 +330,14 @@ export class Menu {
     return row;
   }
 
-  _segment(label, options, value, onChange) {
+  _segment(label, options, value, onChange, hint = '') {
     const { row, control } = this._row(label);
+    if (hint) {
+      const h = document.createElement('span');
+      h.className = 'setting-hint';
+      h.textContent = hint;
+      row.querySelector('label').appendChild(h);
+    }
     const seg = document.createElement('div');
     seg.className = 'seg';
     for (const opt of options) {

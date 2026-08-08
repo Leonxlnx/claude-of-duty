@@ -11,6 +11,27 @@ const CAPTURE_H = 32;
  * probe projected from an equirectangular capture of the same sky function.
  * No HDRI, no cube map, no static image anywhere in the chain.
  */
+/**
+ * Times of day, as a whole lighting state each rather than a sun angle.
+ *
+ * Elevations are kept above the horizon even at dawn and dusk — a sun exactly
+ * on the horizon casts shadows of effectively infinite length, and the cascade
+ * split cannot contain them, so the map fills with shadow acne. Six degrees is
+ * low enough to read as golden hour and high enough to shadow cleanly.
+ */
+export const TIME_OF_DAY = {
+  dawn:    { azimuth: 74,  elevation: 6.5, intensity: 8.5,  turbidity: 4.4, clouds: 0.58, tint: [1.0, 0.80, 0.60], ev: -0.30 },
+  morning: { azimuth: 96,  elevation: 28,  intensity: 16.0, turbidity: 3.2, clouds: 0.50, tint: [1.0, 0.94, 0.86], ev: -0.05 },
+  day:     { azimuth: 116, elevation: 57,  intensity: 21.0, turbidity: 2.6, clouds: 0.52, tint: [1.0, 1.00, 1.00], ev: 0 },
+  sunset:  { azimuth: 252, elevation: 7.0, intensity: 9.5,  turbidity: 5.2, clouds: 0.62, tint: [1.0, 0.72, 0.46], ev: -0.35 },
+  // Night needs a large negative bias or it does not exist. Auto-exposure
+  // keys the average of the frame to a fixed target, so dimming the sun by
+  // twenty-five times just makes the meter open up by twenty-five times and
+  // hands back the same picture — a dark scene metered back to daylight. The
+  // bias is what stops the meter from undoing the time of day.
+  night:   { azimuth: 288, elevation: 34,  intensity: 0.85, turbidity: 2.0, clouds: 0.40, tint: [0.62, 0.72, 1.0], ev: -2.60 }
+};
+
 export class Sky {
   constructor(renderer, quality) {
     this.renderer = renderer;
@@ -108,6 +129,39 @@ export class Sky {
     const t = THREE.MathUtils.clamp(1 - this.sunDirection.y, 0, 1);
     this.sunColor.setRGB(1.0, 0.965 - t * 0.13, 0.90 - t * 0.28);
     this.shared.uSunColor.value.set(this.sunColor.r, this.sunColor.g, this.sunColor.b);
+  }
+
+  /**
+   * Put the sky at a time of day.
+   *
+   * Elevation alone is not a time of day. What separates dawn from noon is
+   * mostly everything else: how far the light has travelled through the
+   * atmosphere (turbidity), how much of it there is, and what colour it has
+   * become on the way. Each preset therefore carries its own intensity,
+   * turbidity, cloud deck and light colour, and the sun colour set by
+   * `setSun` is then multiplied by that tint so a low sun still warms itself.
+   *
+   * Night is not a dark day: the key light becomes a cool moon at a fraction
+   * of the intensity, and the ambient has to carry the frame instead.
+   */
+  setTimeOfDay(name) {
+    const p = TIME_OF_DAY[name] || TIME_OF_DAY.day;
+    this.timeOfDay = name in TIME_OF_DAY ? name : 'day';
+    this.sunIntensity = p.intensity;
+    this.turbidity = p.turbidity;
+    this.cloudCoverage = p.clouds;
+    this.shared.uSunIntensity.value = p.intensity;
+    this.shared.uTurbidity.value = p.turbidity;
+    // Read by RenderGraph when it drives the exposure meter.
+    this.exposureBias = p.ev ?? 0;
+    this.setSun(p.azimuth, p.elevation);
+    // Tint on top of the elevation-driven warmth, so a moon reads cool and a
+    // low sun reads hot rather than both simply reading "not midday".
+    this.sunColor.setRGB(
+      this.sunColor.r * p.tint[0], this.sunColor.g * p.tint[1], this.sunColor.b * p.tint[2]
+    );
+    this.shared.uSunColor.value.set(this.sunColor.r, this.sunColor.g, this.sunColor.b);
+    return this.timeOfDay;
   }
 
   update(dt, time) {

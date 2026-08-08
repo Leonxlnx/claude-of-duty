@@ -312,7 +312,12 @@ layout(location = 0) out vec4 outColor;
 // ceiling the blur length is whatever the velocity buffer says, and a fast
 // sprint past near geometry produces vectors long enough to drag one part of
 // the image across another — the frame reads as torn rather than blurred.
-const float MAX_BLUR = 0.022;
+//
+// Halved from 0.022, which was 42 pixels of streak at 1080p. Camera rotation
+// is the worst case and the most objectionable, because it is continuous and
+// player-driven: flicking the view left and right smeared the entire frame,
+// which reads as the picture breaking rather than as motion.
+const float MAX_BLUR = 0.011;
 
 vec2 capBlur(vec2 v){
   float len = length(v);

@@ -24,6 +24,11 @@ function halton(index, base) {
 }
 
 const BLOOM_LEVELS = 6;
+/** Baseline exposure compensation in EV; the time of day biases it further. */
+const EXPOSURE_COMPENSATION = -0.9;
+/** How far the meter may open and close around that baseline. */
+const EXPOSURE_MIN_EV = -2.5;
+const EXPOSURE_MAX_EV = 6.5;
 const TILE_SIZE = 12;
 /** Trim on the baked sky probe; see `updateSkyUniforms`. */
 const SKY_IRRADIANCE = 0.46;
@@ -170,7 +175,7 @@ export class RenderGraph {
     this.exposurePass = new FullscreenPass(EXPOSURE_FRAG, {
       uLuminance: { value: null }, uPrevExposure: { value: null },
       uDeltaTime: { value: 0.016 }, uBrightenSpeed: { value: 2.6 }, uDarkenSpeed: { value: 1.1 },
-      uCompensation: { value: -0.9 }, uMinEV: { value: -2.5 }, uMaxEV: { value: 6.5 },
+      uCompensation: { value: EXPOSURE_COMPENSATION }, uMinEV: { value: -2.5 }, uMaxEV: { value: 6.5 },
       uReset: { value: 1 }
     });
 
@@ -549,6 +554,20 @@ export class RenderGraph {
     ex.uLuminance.value = this.lumTargets[this.lumTargets.length - 1].texture;
     ex.uPrevExposure.value = src.texture;
     ex.uDeltaTime.value = Math.min(dt, 0.1);
+    // The time of day biases the meter. Without this an auto-exposed night is
+    // a daylit scene with a blue sky: the meter opens by exactly as much as the
+    // sun was dimmed and hands back the picture it started with.
+    //
+    // Biasing alone is not enough, because `uMinEV` is a ceiling on how far the
+    // meter may open and it sits at -2.5, which is 5.7x. A night scene is dark
+    // enough to hit that ceiling and spend all of it, so the bias got eaten and
+    // night came out as overcast afternoon. Moving the whole clamp window with
+    // the bias keeps the meter's adaptive range — dark interiors still open up
+    // — while denying it the headroom to undo the time of day.
+    const bias = this.sky.exposureBias ?? 0;
+    ex.uCompensation.value = EXPOSURE_COMPENSATION + bias;
+    ex.uMinEV.value = EXPOSURE_MIN_EV - bias;
+    ex.uMaxEV.value = EXPOSURE_MAX_EV - bias;
     this.exposurePass.render(renderer, dst);
     this.exposureIndex = 1 - this.exposureIndex;
     ex.uReset.value = 0;
