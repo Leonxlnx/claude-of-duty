@@ -1,6 +1,26 @@
 import { Settings } from './Settings.js';
 
 /**
+ * Ceiling on believable mouse speed, in pixels per second, and the floor of
+ * the per-event budget so a 1 kHz mouse is not throttled by its own tiny gaps.
+ */
+/**
+ * A fast 180 at default sensitivity is about 1600 pixels in ~150ms, so roughly
+ * 10500 px/s. 14000 sits comfortably above any real flick and well below the
+ * spikes, which arrive as several hundred pixels in a single event.
+ */
+const MAX_LOOK_SPEED = 14000;
+const MIN_LOOK_BUDGET = 150;
+/**
+ * Longest gap the budget may be earned over. Coalescing happens within a
+ * frame, so more than one slow frame of credit is not a thing that can
+ * legitimately accumulate — and letting it grow was the hole: after a pause
+ * the allowance reached thousands of pixels and waved the spike straight
+ * through, which is the bug this gate exists for.
+ */
+const MAX_LOOK_GAP = 0.04;
+
+/**
  * Raw pointer-lock mouse + keyboard input. Mouse deltas are accumulated per
  * frame from raw movementX/Y so camera response never depends on frame pacing
  * beyond the accumulation window.
@@ -19,6 +39,9 @@ export class Input {
     this.buttonsPressed = [false, false, false];
     this.locked = false;
     this.enabled = true;
+    /** Bogus mouse deltas rejected. Diagnostic, and asserted in the tests. */
+    this.discardedLookSpikes = 0;
+    this._swallowNextMove = false;
     this.onPointerLockChange = null;
     this.onPointerLockError = null;
     this.onPauseRequested = null;
@@ -55,10 +78,45 @@ export class Input {
     window.addEventListener('keydown', kd, { passive: false });
     window.addEventListener('keyup', ku);
 
+    /**
+     * Mouse look, with a sanity gate on each event.
+     *
+     * `movementX` is not always a real movement. Chromium hands out occasional
+     * enormous deltas around pointer lock — most reliably on the first event
+     * after the lock engages, where it reports the jump from wherever the
+     * cursor was to the centre of the screen, which on a 1920-wide display is
+     * up to about 960 pixels. Summed straight into the view at the default
+     * sensitivity that is ~110 degrees in one frame: the view snaps a right
+     * angle in the direction you were already turning, which is exactly what
+     * it feels like.
+     *
+     * So: swallow the first event after acquiring the lock, and reject any
+     * single event that claims a speed no hand can produce. The ceiling is
+     * generous — 24000 px/s is about 2700 degrees per second at default
+     * sensitivity, several times faster than any real flick — and it scales
+     * with the gap since the last event, because a stalled frame legitimately
+     * coalesces more movement into one delivery. Rejecting rather than
+     * clamping: a clamped spike is still a large bogus turn, and dropping one
+     * sample costs nothing.
+     */
+    let lastMoveAt = 0;
     window.addEventListener('mousemove', (e) => {
       if (!this.locked || !this.enabled) return;
-      this.mouseDX += e.movementX || 0;
-      this.mouseDY += e.movementY || 0;
+      const now = performance.now();
+      const gap = lastMoveAt ? Math.min(MAX_LOOK_GAP, (now - lastMoveAt) / 1000) : 0.016;
+      lastMoveAt = now;
+
+      if (this._swallowNextMove) { this._swallowNextMove = false; return; }
+
+      const dx = e.movementX || 0;
+      const dy = e.movementY || 0;
+      const limit = Math.max(MIN_LOOK_BUDGET, MAX_LOOK_SPEED * gap);
+      if (Math.abs(dx) > limit || Math.abs(dy) > limit) {
+        this.discardedLookSpikes++;
+        return;
+      }
+      this.mouseDX += dx;
+      this.mouseDY += dy;
     });
 
     this.canvas.addEventListener('mousedown', (e) => {
@@ -77,7 +135,12 @@ export class Input {
 
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.canvas;
-      if (this.locked) this._lockKeyboard();
+      if (this.locked) {
+        // The first delivery after the lock engages carries the jump from the
+        // cursor's old position to the centre of the screen, not a movement.
+        this._swallowNextMove = true;
+        this._lockKeyboard();
+      }
       else {
         this._unwind();
         this.keys.clear();

@@ -168,6 +168,61 @@ test.describe('movement', () => {
   });
 });
 
+test.describe('mouse look', () => {
+  /**
+   * A bogus mouse delta cannot snap the view.
+   *
+   * `movementX` is not always a movement: Chromium hands out occasional
+   * enormous deltas around pointer lock, most reliably the jump from the
+   * cursor's old position to the centre of the screen on the first event after
+   * the lock engages. At default sensitivity ~800px is a right angle, and it
+   * arrives in the direction the player was already turning, so the view snaps
+   * 90 degrees mid-turn.
+   */
+  test('an impossible mouse delta is rejected instead of snapping the view', async ({ page }) => {
+    await boot(page, '?auto=1');
+    await settle(page, 1200);
+
+    const run = await page.evaluate(async () => {
+      const g = window.__game, h = window.__harness;
+      const input = g.input;
+      // Pointer lock is refused under automation, so stage the locked state
+      // and drive the real DOM path the browser would.
+      input.locked = true;
+      input._swallowNextMove = false;
+      const fire = (dx) => window.dispatchEvent(
+        new MouseEvent('mousemove', { movementX: dx, movementY: 0, bubbles: true })
+      );
+
+      // A believable flick first: this must still turn the view.
+      const before = g.player.yaw;
+      for (let i = 0; i < 6; i++) fire(60);
+      await h.wait(0.15);
+      const afterReal = g.player.yaw;
+
+      // Now the spike. 800px is a right angle at default sensitivity.
+      const spikesBefore = input.discardedLookSpikes;
+      fire(800);
+      fire(-950);
+      await h.wait(0.15);
+      const afterSpike = g.player.yaw;
+
+      input.locked = false;
+      return {
+        realTurn: Math.abs(afterReal - before),
+        spikeTurn: Math.abs(afterSpike - afterReal),
+        rejected: input.discardedLookSpikes - spikesBefore
+      };
+    });
+
+    // Real input still moves the view.
+    expect(run.realTurn).toBeGreaterThan(0.05);
+    // Both spikes rejected, and the view barely moved.
+    expect(run.rejected).toBe(2);
+    expect(run.spikeTurn, 'a spike still turned the view').toBeLessThan(0.02);
+  });
+});
+
 test.describe('slide', () => {
   test('crouching out of a sprint carries speed and drops the head', async ({ page }) => {
     await boot(page, '?auto=1');

@@ -223,3 +223,28 @@ a setup snippet in the page — `node tools/shot.mjs out.png "?auto=1" 4000 ""
 tools/snippets/pose-ads.js`. `tools/poke.mjs` evaluates a snippet against a
 booted game and prints the result. Both were how the visuals in this build were
 iterated on.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE). Do what you like with it, including commercially;
+keep the copyright notice.
+
+There are no third-party assets to worry about. Every texture, mesh, sound and
+cloud in this repository is generated at runtime from code, so the licence
+covers the whole thing without an asset-attribution list. The only runtime
+dependency is three.js, which is MIT as well.
+
+## Contributing
+
+Issues and pull requests welcome.
+
+- `npm run dev` to work, `npx playwright test` before you push. The suite is
+  the contract: it covers hit registration, movement, the pointer-lock
+  teardown, offline integrity and a set of visual assertions about exposure and
+  shadows.
+- Read `HANDOFF.md` first. It records the traps this codebase has already cost
+  somebody a day to find — several bugs here looked like subjective "feel"
+  complaints and turned out to be measurable defects.
+- `WORKBENCH.md` is the running log of the visual improvement loop, including
+  which critic findings survived being checked against the pixels and which
+  did not.
