@@ -104,7 +104,12 @@ export function resolveQualityLevel(value) {
 
 const DEFAULTS = {
   // 1-10; 4 is the old "ultra". Legacy names still resolve.
-  quality: 3,
+  //
+  // 4 is the default: it is the best-looking level that still renders at
+  // native resolution, so it costs no supersampling and dynamic resolution can
+  // pull it down if a machine struggles. 5 and up are an explicit choice to
+  // spend, not something anyone should land on without asking for it.
+  quality: 4,
   sensitivity: 0.9,
   adsMultiplier: 0.72,
   fov: 90,
